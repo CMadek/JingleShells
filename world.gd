@@ -2,15 +2,15 @@ extends Node3D
 ## The whole game world: night-time village, the bomber, presents, scoring and networking.
 ## The host (peer 1) is authoritative for flight, drops and score.
 
+const Cargo := preload("res://cargo.gd")
 const PlayerScript := preload("res://player.gd")
 
 const HELM_POS := Vector3(0, 0, -5.2)   # stand here to take the helm
-const HATCH_POS := Vector3(0, 0, 3.0)   # stand here to drop presents
+const HATCH_POS := Vector3(0, 0, 3.0)   # center of the deck opening
 const GRAVITY := 9.8
 const START_ALTITUDE := 45.0
 const MIN_SPEED := 8.0
 const TURN_RATE := 0.45
-const DROP_COOLDOWN_MS := 500
 const NICE_POINTS := 10
 const NAUGHTY_PENALTY := 5
 const MIN_ALTITUDE := 20.0
@@ -43,8 +43,21 @@ var players := {}          # peer id -> player node
 var pilot_id := 0          # 0 = helm is empty
 var score := 0
 var chimneys: Array = []   # {top: Vector3, nice: bool}
-var presents: Array = []   # {node: Node3D, vel: Vector3}
-var last_drop_ms := 0
+const PILES := {Cargo.Kind.PRESENT: Vector3(-2, 0.55, 0), Cargo.Kind.BOMB: Vector3(2, 0.55, 0)}
+@export_range(1, 6) var pickup_range := 2.8
+@export_range(0.1, 4) var charge_seconds := 1.2
+@export var min_throw_speed := 2.5
+@export var max_throw_speed := 13.0
+@export_range(0, 1) var cargo_friction := 0.55
+@export var cargo_lifetime := 90.0
+@export var max_loose_items := 48
+
+var loose := {} # ID -> host rigid body or client visual
+var next_item := 1
+var charge_start := {}
+var moving_hull: AnimatableBody3D
+var previous_plane: Transform3D
+var physics_delta := 1.0 / 60.0
 
 # Flight state. The host simulates it; clients receive it via sync_bomber.
 var heading := 0.0      # yaw
@@ -52,7 +65,6 @@ var pitch := 0.0        # nose up = positive
 var roll := 0.0         # right wing down = positive
 var speed := 14.0
 var throttle := MIN_THROTTLE
-var flight_vel := Vector3.ZERO   # world-space velocity, used for dropped presents
 var in_steer := 0.0
 var in_throttle := 0.0
 var in_climb := 0.0
@@ -158,6 +170,11 @@ func _build_environment() -> void:
 	ground.mesh = pm
 	ground.material_override = _mat(Color(0.9, 0.93, 1.0))
 	add_child(ground)
+	var terrain := StaticBody3D.new()
+	var floor_shape := CollisionShape3D.new()
+	floor_shape.shape = WorldBoundaryShape3D.new()
+	terrain.add_child(floor_shape)
+	add_child(terrain)
 
 
 func _build_village() -> void:
@@ -185,10 +202,10 @@ func _make_beam_mat(c: Color) -> StandardMaterial3D:
 
 
 func _make_house(base: Vector3, col: Color, nice: bool) -> void:
-	var house := Node3D.new()
+	var house := StaticBody3D.new()
 	house.position = base
 	add_child(house)
-	_box(house, Vector3(8, 5, 7), Vector3(0, 2.5, 0), col)
+	_box(house, Vector3(8, 5, 7), Vector3(0, 2.5, 0), col, false, house)
 
 	var roof := MeshInstance3D.new()
 	var prism := PrismMesh.new()
@@ -197,6 +214,7 @@ func _make_house(base: Vector3, col: Color, nice: bool) -> void:
 	roof.material_override = _mat(Color(0.35, 0.2, 0.2))
 	roof.position = Vector3(0, 6.25, 0)
 	house.add_child(roof)
+	roof.create_convex_collision()
 
 	_box(house, Vector3(1.2, 3.5, 1.2), Vector3(2.2, 5.75, 1.0), Color(0.45, 0.2, 0.15))
 	if nice:
@@ -214,7 +232,6 @@ func _make_house(base: Vector3, col: Color, nice: bool) -> void:
 	house.add_child(beam)
 
 	chimneys.append({"top": base + Vector3(2.2, 7.5, 1.0), "nice": nice})
-#penis
 
 func _build_bomber() -> void:
 	bomber = Node3D.new()
@@ -229,19 +246,43 @@ func _build_bomber() -> void:
 	var hull := StaticBody3D.new()
 	hull.name = "Hull"
 	bomber.add_child(hull)
-	_box(hull, Vector3(6, 0.4, 14), Vector3(0, -0.2, 0), wood, false, hull)       # floor
+	# Four slabs surround the opening at x = -1..1 and z = 2..4.
+	_box(hull, Vector3(6, 0.4, 9), Vector3(0, -0.2, -2.5), wood, false, hull)
+	_box(hull, Vector3(6, 0.4, 3), Vector3(0, -0.2, 5.5), wood, false, hull)
+	for side in [-1, 1]:
+		_box(hull, Vector3(2, 0.4, 2), Vector3(side * 2, -0.2, 3), wood, false, hull)
 	_box(hull, Vector3(0.3, 2.5, 14), Vector3(-3, 1.25, 0), red, false, hull)     # left wall
 	_box(hull, Vector3(0.3, 2.5, 14), Vector3(3, 1.25, 0), red, false, hull)      # right wall
 	_box(hull, Vector3(6.3, 2.5, 0.3), Vector3(0, 1.25, 7), red, false, hull)     # back wall
 	_box(hull, Vector3(6.3, 1.0, 0.3), Vector3(0, 0.5, -7), red, false, hull)     # low front rail
 	_box(hull, Vector3(1.6, 1.0, 0.8), Vector3(0, 0.5, -6.3), wood, false, hull)  # helm console
 
-	_box(bomber, Vector3(26, 0.25, 3.5), Vector3(0, -0.4, 1), gold)               # wings
-	_box(bomber, Vector3(0.3, 3.0, 2.0), Vector3(0, 2.5, 7.8), gold)              # tail fin
-	_box(bomber, Vector3(2, 0.05, 2), Vector3(0, 0.03, 3), Color(1, 0.85, 0.2), true)  # hatch plate
-
+	for side in [-1, 1]:
+		_box(bomber, Vector3(10, 0.25, 3.5), Vector3(side * 8, -0.4, 1), gold)
+		_box(bomber, Vector3(0.09, 0.03, 2.1), HATCH_POS + Vector3(side * 1.05, 0, 0), gold, true)
+		_box(bomber, Vector3(2.2, 0.03, 0.09), HATCH_POS + Vector3(0, 0, side * 1.05), gold, true)
+	_box(bomber, Vector3(0.3, 3.0, 2.0), Vector3(0, 2.5, 7.8), gold)
 	_label3d(bomber, "HELM - press E", Vector3(0, 2.2, -5.8))
-	_label3d(bomber, "PRESENT HATCH - click", Vector3(0, 2.0, 3.0))
+	_label3d(bomber, "CARGO HATCH", Vector3(0, 1.7, 4.2))
+	for kind in PILES:
+		var center: Vector3 = PILES[kind]
+		for offset in [Vector3(-0.26,-0.3,0), Vector3(0.26,-0.3,0), Vector3(0,0.17,0)]:
+			var prop := Cargo.model(kind)
+			bomber.add_child(prop)
+			prop.position = center + offset
+		_label3d(bomber, "PRESENTS" if kind == Cargo.Kind.PRESENT else "BOMBS", center + Vector3.UP)
+	# Elves ride by parenting. Cargo needs a moving surface with physics velocity.
+	hull.collision_layer = 16
+	if multiplayer.is_server():
+		moving_hull = AnimatableBody3D.new()
+		moving_hull.collision_layer = 8
+		moving_hull.collision_mask = 4
+		moving_hull.transform = bomber.transform
+		for child in hull.get_children():
+			if child is CollisionShape3D:
+				moving_hull.add_child(child.duplicate())
+		add_child(moving_hull)
+	previous_plane = bomber.transform
 
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(0, 2.2, 0)
@@ -285,6 +326,12 @@ func request_players() -> void:
 	add_player.rpc(id)
 	sync_score.rpc_id(id, score, "")
 	set_pilot.rpc_id(id, pilot_id)
+	for pid in players:
+		if players[pid].held_kind != Cargo.Kind.EMPTY:
+			set_held.rpc_id(id, pid, players[pid].held_kind)
+	for item_id in loose:
+		var body: Node3D = loose[item_id]
+		show_loose.rpc_id(id, item_id, body.get_meta("kind"), body.transform)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -309,6 +356,7 @@ func remove_player(id: int) -> void:
 
 
 func _on_peer_disconnected(id: int) -> void:
+	charge_start.erase(id)
 	if pilot_id == id:
 		set_pilot.rpc(0)
 	remove_player.rpc(id)
@@ -338,6 +386,9 @@ func _handle_helm(id: int) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func set_pilot(id: int) -> void:
+	if id in players:
+		players[id].charging_since = -1
+		charge_start.erase(id)
 	pilot_id = id
 	in_steer = 0.0
 	in_throttle = 0.0
@@ -367,15 +418,14 @@ func _apply_input(id: int, steer: float, throttle: float, climb: float) -> void:
 
 # ---------------------------------------------------------------- flight
 
-func forward() -> Vector3:
-	return Vector3(-sin(heading), 0.0, -cos(heading))
-
-
 func _physics_process(delta: float) -> void:
 	if multiplayer.is_server():
+		previous_plane = bomber.transform
+		physics_delta = delta
 		_fly(delta)
+		moving_hull.transform = bomber.transform
 		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed)
-	_step_presents(delta)
+		_step_cargo(delta)
 
 func _fly(delta: float) -> void:
 	# Throttle is a lever: it stays where you leave it.
@@ -410,7 +460,6 @@ func _fly(delta: float) -> void:
 	var vel := Vector3(-sin(heading) * cp, sin(pitch), -cos(heading) * cp) * speed
 	vel.y -= (1.0 - lift) * STALL_SINK
 	vel.y -= (1.0 - cos(roll)) * 4.0   # lift lost to bank
-	flight_vel = vel
 	bomber.position += vel * delta
 
 	# Altitude limits: ground/ceiling push the nose back toward level.
@@ -439,67 +488,169 @@ func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float) -> void:
 	_apply_attitude()
 
 
-# ---------------------------------------------------------------- presents
+func aimed_pile(view: Transform3D) -> int:
+	for kind in PILES:
+		var offset: Vector3 = bomber.to_global(PILES[kind]) - view.origin
+		var along := offset.dot(-view.basis.z)
+		if along > 0 and offset.length() <= pickup_range and (offset + view.basis.z * along).length() <= 0.62:
+			return kind
+	return Cargo.Kind.EMPTY
 
-func request_drop() -> void:
+
+func cargo_action(action: String) -> void:
+	var id := multiplayer.get_unique_id()
+	if not players.has(id):
+		return
+	var elf = players[id]
 	if multiplayer.is_server():
-		_handle_drop(1)
+		_handle_cargo(id, action, elf.rotation.y, elf.pitch)
 	else:
-		_drop_rpc.rpc_id(1)
+		_cargo_rpc.rpc_id(1, action, elf.rotation.y, elf.pitch)
 
 
 @rpc("any_peer", "reliable")
-func _drop_rpc() -> void:
+func _cargo_rpc(action: String, yaw: float, look_pitch: float) -> void:
 	if multiplayer.is_server():
-		_handle_drop(multiplayer.get_remote_sender_id())
+		_handle_cargo(multiplayer.get_remote_sender_id(), action, yaw, look_pitch)
 
 
-func _handle_drop(id: int) -> void:
-	if not players.has(id) or id == pilot_id:
+func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float) -> void:
+	if id == pilot_id or not players.has(id) or not is_finite(yaw) or not is_finite(look_pitch):
 		return
-	if players[id].position.distance_to(HATCH_POS) > 3.0:
+	var elf = players[id]
+	var feet: Vector3 = elf.position if id == 1 else elf.net_pos
+	var aim := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(look_pitch, -1.5, 1.5))
+	var view := Transform3D(bomber.basis * aim, bomber.to_global(feet + Vector3.UP * 1.6))
+	if action == "pickup" and elf.held_kind == Cargo.Kind.EMPTY:
+		var kind := aimed_pile(view)
+		if kind != Cargo.Kind.EMPTY:
+			set_held.rpc(id, kind)
 		return
-	var now := Time.get_ticks_msec()
-	if now - last_drop_ms < DROP_COOLDOWN_MS:
+	if elf.held_kind == Cargo.Kind.EMPTY:
 		return
-	last_drop_ms = now
-	var gpos := bomber.to_global(HATCH_POS + Vector3(0, -1.2, 0))
-	spawn_present.rpc(gpos, forward() * speed)
+	match action:
+		"charge":
+			if not charge_start.has(id):
+				charge_start[id] = Time.get_ticks_msec()
+		"cancel":
+			charge_start.erase(id)
+		"drop", "throw":
+			var impulse := 0.0
+			if action == "throw":
+				if not charge_start.has(id):
+					return
+				var seconds := (Time.get_ticks_msec() - int(charge_start[id])) / 1000.0
+				impulse = lerpf(min_throw_speed, max_throw_speed, clampf(seconds / charge_seconds, 0, 1))
+			charge_start.erase(id)
+			_release(id, elf.held_kind, view, impulse)
 
 
 @rpc("authority", "call_local", "reliable")
-func spawn_present(gpos: Vector3, vel: Vector3) -> void:
-	var n := Node3D.new()
-	_box(n, Vector3(0.5, 0.5, 0.5), Vector3.ZERO, Color(0.85, 0.1, 0.15))
-	_box(n, Vector3(0.52, 0.1, 0.52), Vector3.ZERO, Color(0.95, 0.8, 0.2))
-	_box(n, Vector3(0.1, 0.52, 0.52), Vector3.ZERO, Color(0.95, 0.8, 0.2))
-	add_child(n)
-	n.position = gpos
-	presents.append({"node": n, "vel": vel})
+func set_held(id: int, kind: int) -> void:
+	if players.has(id):
+		players[id].carry(kind)
 
 
-func _step_presents(delta: float) -> void:
-	for i in range(presents.size() - 1, -1, -1):
-		var d: Dictionary = presents[i]
-		var n: Node3D = d["node"]
-		var v: Vector3 = d["vel"]
-		var prev := n.position
-		v.y -= GRAVITY * delta
-		d["vel"] = v
-		n.position += v * delta
-		n.rotate_x(2.0 * delta)
-		var done := false
-		for c in chimneys:
-			var top: Vector3 = c["top"]
-			if prev.y >= top.y and n.position.y < top.y:
-				if Vector2(n.position.x - top.x, n.position.z - top.z).length() < 0.5:
-					if multiplayer.is_server():
-						_award(c)
-					done = true
+func _release(id: int, kind: int, view: Transform3D, impulse: float) -> void:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = Cargo.shape(kind)
+	query.transform = view
+	query.collision_mask = 1 | 4 | 16
+	var space := get_world_3d().direct_space_state
+	if not space.intersect_shape(query, 1).is_empty():
+		return
+	query.motion = view.basis * Vector3(0.20, -0.18, -0.95)
+	var fraction := space.cast_motion(query)[0]
+	var pos := view.origin + query.motion * maxf(0, fraction - 0.025)
+	# Difference the release point across plane poses to include rotation and altitude limits.
+	var local_pos := bomber.to_local(pos)
+	var inherited := (pos - previous_plane * local_pos) / physics_delta
+	if loose.size() >= max_loose_items and not loose.is_empty():
+		remove_loose.rpc(loose.keys()[0])
+	var item_id := next_item
+	next_item += 1
+	set_held.rpc(id, Cargo.Kind.EMPTY)
+	show_loose.rpc(item_id, kind, Transform3D(view.basis, pos))
+	var body: RigidBody3D = loose[item_id]
+	body.linear_velocity = inherited - view.basis.z * impulse
+
+
+@rpc("authority", "call_local", "reliable")
+func show_loose(item_id: int, kind: int, pose: Transform3D) -> void:
+	if loose.has(item_id):
+		return
+	var node := Cargo.model(kind)
+	if multiplayer.is_server():
+		var body := RigidBody3D.new()
+		body.collision_layer = 4
+		body.collision_mask = 1 | 4 | 8
+		body.continuous_cd = true
+		body.can_sleep = false
+		body.linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
+		body.linear_damp = 0
+		body.physics_material_override = PhysicsMaterial.new()
+		body.physics_material_override.friction = cargo_friction
+		var collider := CollisionShape3D.new()
+		collider.shape = Cargo.shape(kind)
+		body.add_child(collider)
+		body.add_child(node)
+		node = body
+		node.set_meta("kind", kind)
+		node.set_meta("previous", pose.origin)
+		node.set_meta("age", 0.0)
+	node.transform = pose
+	add_child(node)
+	loose[item_id] = node
+
+
+func _step_cargo(delta: float) -> void:
+	var snapshot := {}
+	for item_id in loose.keys():
+		var body: Node3D = loose[item_id]
+		var prev: Vector3 = body.get_meta("previous")
+		var pos := body.position
+		var age := float(body.get_meta("age")) + delta
+		var delivered := false
+		if body.get_meta("kind") == Cargo.Kind.PRESENT and prev.y >= 7.5 and pos.y < 7.5:
+			var crossing := prev.lerp(pos, (prev.y - 7.5) / (prev.y - pos.y))
+			for chimney in chimneys:
+				if crossing.distance_to(chimney.top) < 0.5:
+					_award(chimney)
+					delivered = true
 					break
-		if done or n.position.y < 0.0:
-			n.queue_free()
-			presents.remove_at(i)
+		if delivered or age >= cargo_lifetime or pos.y < -5 or pos.distance_to(bomber.position) > 3000:
+			remove_loose.rpc(item_id)
+			continue
+		body.set_meta("age", age)
+		body.set_meta("previous", pos)
+		if Engine.get_physics_frames() % 3 == 0:
+			snapshot[item_id] = body.transform
+	if not snapshot.is_empty():
+		sync_loose.rpc(snapshot, bomber.transform)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered", 1)
+func sync_loose(snapshot: Dictionary, plane_pose: Transform3D) -> void:
+	var inverse_plane := plane_pose.affine_inverse()
+	for id in snapshot:
+		if not loose.has(id):
+			continue
+		var visual: Node3D = loose[id]
+		var pose: Transform3D = snapshot[id]
+		var cabin_pose := inverse_plane * pose
+		# Keep deck cargo aligned with the faster flight updates between snapshots.
+		var in_cabin := AABB(Vector3(-3.5, -0.6, -7.5), Vector3(7, 4, 15)).has_point(cabin_pose.origin)
+		var parent: Node3D = bomber if in_cabin else self
+		if visual.get_parent() != parent:
+			visual.reparent(parent, false)
+		visual.transform = cabin_pose if in_cabin else pose
+
+
+@rpc("authority", "call_local", "reliable")
+func remove_loose(item_id: int) -> void:
+	if loose.has(item_id):
+		loose[item_id].queue_free()
+		loose.erase(item_id)
 
 
 func _award(chimney: Dictionary) -> void:
@@ -527,8 +678,16 @@ func _process(delta: float) -> void:
 	if pilot_id == me:
 		txt += "PILOTING: W/S speed, A/D turn, Space/Shift climb/dive, E to leave the helm"
 	else:
-		txt += "WASD walk, Space jump, E at the helm to fly, click on the gold hatch to drop a present\n"
-		txt += "Helm: %s" % ("empty" if pilot_id == 0 else "an elf is flying")
+		var elf = players.get(me)
+		if elf and elf.held_kind != Cargo.Kind.EMPTY:
+			txt += "Hold left click to throw   G to drop"
+			if elf.charging_since >= 0:
+				var elapsed := (Time.get_ticks_msec() - int(elf.charging_since)) / 1000.0
+				txt += "   Charge: %d%%" % roundi(100 * clampf(elapsed / charge_seconds, 0, 1))
+		elif elf and aimed_pile(elf.head.global_transform) != Cargo.Kind.EMPTY:
+			txt += "E to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
+		else:
+			txt += "WASD walk, Space jump, E at the helm to fly"
 	txt += "\nGreen chimney = nice, red chimney = naughty. Esc frees the mouse."
 	hud_info.text = txt
 	if msg_timer > 0.0:

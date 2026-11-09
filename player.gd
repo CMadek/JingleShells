@@ -2,6 +2,11 @@ extends CharacterBody3D
 ## One elf. Child of the Bomber node, so it rides along with the ship.
 ## Each peer controls its own elf and streams its state to everyone else.
 
+const Cargo := preload("res://cargo.gd")
+var held_kind := Cargo.Kind.EMPTY
+var held_model: Node3D
+var charging_since := -1
+
 const WALK_SPEED := 5.0
 const JUMP_SPEED := 5.0
 const GRAVITY := 18.0
@@ -19,6 +24,8 @@ var net_pitch := 0.0
 
 
 func _ready() -> void:
+	collision_layer = 2
+	collision_mask = 17
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.4
@@ -82,16 +89,40 @@ func _input(event: InputEvent) -> void:
 		rotate_y(-event.relative.x * MOUSE_SENS)
 		pitch = clampf(pitch - event.relative.y * MOUSE_SENS, -1.5, 1.5)
 		head.rotation.x = pitch
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		else:
-			world.request_drop()
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and held_kind != Cargo.Kind.EMPTY and world.pilot_id != peer_id:
+			if event.pressed and charging_since < 0:
+				charging_since = Time.get_ticks_msec()
+				world.cargo_action("charge")
+			elif not event.pressed and charging_since >= 0:
+				charging_since = -1
+				world.cargo_action("throw")
 	elif event.is_action_pressed("ui_cancel"):
+		charging_since = -1
+		world.cargo_action("cancel")
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("interact"):
 		if world.pilot_id == peer_id or position.distance_to(world.HELM_POS) < 2.5:
 			world.request_helm()
+		else:
+			world.cargo_action("pickup")
+	elif event.is_action_pressed("drop_cargo"):
+		charging_since = -1
+		world.cargo_action("drop")
+
+
+func carry(kind: int) -> void:
+	charging_since = -1
+	held_kind = kind
+	if held_model:
+		held_model.queue_free()
+		held_model = null
+	if kind != Cargo.Kind.EMPTY:
+		held_model = Cargo.model(kind)
+		head.add_child(held_model)
+		held_model.position = Vector3(0.29, -0.27, -0.65)
 
 
 func _physics_process(delta: float) -> void:
@@ -105,7 +136,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		position = world.HELM_POS
 		var v := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-		world.send_pilot_input(v.x, -v.y, Input.get_axis("move_forward", "move_back"))
+		world.send_pilot_input(v.x, -v.y, Input.get_axis("descend", "jump"))
 	else:
 		if is_on_floor():
 			velocity.y = JUMP_SPEED if Input.is_action_just_pressed("jump") else 0.0
@@ -122,11 +153,4 @@ func _physics_process(delta: float) -> void:
 		position = Vector3(0, 0.3, 1)
 		velocity = Vector3.ZERO
 
-	sync_state.rpc(position, rotation.y, head.rotation.x)
-
-
-@rpc("authority", "unreliable_ordered")
-func sync_state(p: Vector3, yaw: float, pt: float) -> void:
-	net_pos = p
-	net_yaw = yaw
-	net_pitch = pt
+	world.get_parent().sync_elf.rpc(position, rotation.y, head.rotation.x)
