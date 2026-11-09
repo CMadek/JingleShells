@@ -266,10 +266,11 @@ func _build_bomber() -> void:
 	_label3d(bomber, "CARGO HATCH", Vector3(0, 1.7, 4.2))
 	for kind in PILES:
 		var center: Vector3 = PILES[kind]
-		for offset in [Vector3(-0.26,-0.3,0), Vector3(0.26,-0.3,0), Vector3(0,0.17,0)]:
-			var prop := Cargo.model(kind)
-			bomber.add_child(prop)
-			prop.position = center + offset
+		var display := Cargo.pile(kind)
+		bomber.add_child(display)
+		display.position = Vector3(center.x, 0, center.z)
+		# Face the decorated front toward the center aisle.
+		display.rotation.y = signf(-center.x) * PI / 2.0
 		_label3d(bomber, "PRESENTS" if kind == Cargo.Kind.PRESENT else "BOMBS", center + Vector3.UP)
 	# Elves ride by parenting. Cargo needs a moving surface with physics velocity.
 	hull.collision_layer = 16
@@ -497,24 +498,41 @@ func aimed_pile(view: Transform3D) -> int:
 	return Cargo.Kind.EMPTY
 
 
-func cargo_action(action: String) -> void:
+func aimed_loose(view: Transform3D) -> int:
+	var target := 0
+	var nearest := pickup_range
+	for item_id in loose:
+		var offset: Vector3 = loose[item_id].global_position - view.origin
+		var along := offset.dot(-view.basis.z)
+		if along <= 0 or offset.length() > pickup_range or along >= nearest:
+			continue
+		if (offset + view.basis.z * along).length() > Cargo.HALF_SIZE + 0.08:
+			continue
+		var ray := PhysicsRayQueryParameters3D.create(view.origin, view.origin + offset, 1 | 16)
+		if get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+			target = item_id
+			nearest = along
+	return target
+
+
+func cargo_action(action: String, item_id := 0) -> void:
 	var id := multiplayer.get_unique_id()
 	if not players.has(id):
 		return
 	var elf = players[id]
 	if multiplayer.is_server():
-		_handle_cargo(id, action, elf.rotation.y, elf.pitch)
+		_handle_cargo(id, action, elf.rotation.y, elf.pitch, item_id)
 	else:
-		_cargo_rpc.rpc_id(1, action, elf.rotation.y, elf.pitch)
+		_cargo_rpc.rpc_id(1, action, elf.rotation.y, elf.pitch, item_id)
 
 
 @rpc("any_peer", "reliable")
-func _cargo_rpc(action: String, yaw: float, look_pitch: float) -> void:
+func _cargo_rpc(action: String, yaw: float, look_pitch: float, item_id: int) -> void:
 	if multiplayer.is_server():
-		_handle_cargo(multiplayer.get_remote_sender_id(), action, yaw, look_pitch)
+		_handle_cargo(multiplayer.get_remote_sender_id(), action, yaw, look_pitch, item_id)
 
 
-func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float) -> void:
+func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float, item_id: int) -> void:
 	if id == pilot_id or not players.has(id) or not is_finite(yaw) or not is_finite(look_pitch):
 		return
 	var elf = players[id]
@@ -522,6 +540,12 @@ func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float) -> vo
 	var aim := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(look_pitch, -1.5, 1.5))
 	var view := Transform3D(bomber.basis * aim, bomber.to_global(feet + Vector3.UP * 1.6))
 	if action == "pickup" and elf.held_kind == Cargo.Kind.EMPTY:
+		if item_id != 0:
+			if loose.has(item_id) and aimed_loose(view) == item_id:
+				var loose_kind: int = loose[item_id].get_meta("kind")
+				remove_loose.rpc(item_id)
+				set_held.rpc(id, loose_kind)
+			return
 		var kind := aimed_pile(view)
 		if kind != Cargo.Kind.EMPTY:
 			set_held.rpc(id, kind)
@@ -586,6 +610,12 @@ func show_loose(item_id: int, kind: int, pose: Transform3D) -> void:
 		body.collision_mask = 1 | 4 | 8
 		body.continuous_cd = true
 		body.can_sleep = false
+		body.contact_monitor = true
+		body.max_contacts_reported = 8
+		body.body_entered.connect(func(other: Node3D):
+			if other is PhysicsBody3D and (other.collision_layer & 1) != 0:
+				body.set_meta("landed", true)
+		)
 		body.linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 		body.linear_damp = 0
 		body.physics_material_override = PhysicsMaterial.new()
@@ -595,9 +625,9 @@ func show_loose(item_id: int, kind: int, pose: Transform3D) -> void:
 		body.add_child(collider)
 		body.add_child(node)
 		node = body
-		node.set_meta("kind", kind)
 		node.set_meta("previous", pose.origin)
 		node.set_meta("age", 0.0)
+	node.set_meta("kind", kind)
 	node.transform = pose
 	add_child(node)
 	loose[item_id] = node
@@ -618,6 +648,10 @@ func _step_cargo(delta: float) -> void:
 					_award(chimney)
 					delivered = true
 					break
+		if not delivered and body.has_meta("landed"):
+			landing_burst.rpc(pos, body.get_meta("kind"))
+			remove_loose.rpc(item_id)
+			continue
 		if delivered or age >= cargo_lifetime or pos.y < -5 or pos.distance_to(bomber.position) > 3000:
 			remove_loose.rpc(item_id)
 			continue
@@ -644,6 +678,37 @@ func sync_loose(snapshot: Dictionary, plane_pose: Transform3D) -> void:
 		if visual.get_parent() != parent:
 			visual.reparent(parent, false)
 		visual.transform = cabin_pose if in_cabin else pose
+
+
+@rpc("authority", "call_local", "reliable")
+func landing_burst(pos: Vector3, kind: int) -> void:
+	var burst := Node3D.new()
+	add_child(burst)
+	burst.position = pos
+	var bomb := kind == Cargo.Kind.BOMB
+	var colors := [Color.ORANGE_RED, Color.GOLD, Color.ORANGE] if bomb else [Color.CRIMSON, Color.GOLD, Color.SEA_GREEN]
+	var tween := burst.create_tween().set_parallel(true)
+	for i in 16:
+		var t := float(i) / 15.0
+		var angle := i * 2.4
+		var direction := Vector3(cos(angle) * sqrt(1-t*t), t, sin(angle) * sqrt(1-t*t))
+		var bit := MeshInstance3D.new()
+		if bomb:
+			var puff := SphereMesh.new()
+			puff.radial_segments = 8
+			puff.rings = 4
+			bit.mesh = puff
+		else:
+			var scrap := BoxMesh.new()
+			scrap.size = Vector3(0.32, 0.12, 0.5)
+			bit.mesh = scrap
+		bit.material_override = _mat(colors[i % colors.size()], true)
+		bit.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		burst.add_child(bit)
+		bit.rotation = direction * i
+		tween.tween_property(bit, "position", direction * (2.8 if bomb else 1.9), 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tween.tween_property(bit, "scale", Vector3.ONE * 0.01, 0.4).set_delay(0.15)
+	tween.chain().tween_callback(burst.queue_free)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -684,6 +749,8 @@ func _process(delta: float) -> void:
 			if elf.charging_since >= 0:
 				var elapsed := (Time.get_ticks_msec() - int(elf.charging_since)) / 1000.0
 				txt += "   Charge: %d%%" % roundi(100 * clampf(elapsed / charge_seconds, 0, 1))
+		elif elf and aimed_loose(elf.head.global_transform) != 0:
+			txt += "E to pick up dropped cargo"
 		elif elf and aimed_pile(elf.head.global_transform) != Cargo.Kind.EMPTY:
 			txt += "E to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
 		else:

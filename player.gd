@@ -104,7 +104,10 @@ func _input(event: InputEvent) -> void:
 		world.cargo_action("cancel")
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("interact"):
-		if world.pilot_id == peer_id or position.distance_to(world.HELM_POS) < 2.5:
+		var item_id: int = world.aimed_loose(head.global_transform) if held_kind == Cargo.Kind.EMPTY else 0
+		if world.pilot_id != peer_id and item_id != 0:
+			world.cargo_action("pickup", item_id)
+		elif world.pilot_id == peer_id or position.distance_to(world.HELM_POS) < 2.5:
 			world.request_helm()
 		else:
 			world.cargo_action("pickup")

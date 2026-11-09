@@ -29,6 +29,7 @@ Requires Godot 4.3 or newer.
 ## Cargo
 
 The two labeled piles have unlimited supplies. Look down at a pile until the pickup prompt appears.
+Aim at dropped cargo and press E to pick it up again. Bombs burst on contact with the ground or a roof, and presents scatter confetti. Both disappear on impact. Successful chimney deliveries still score normally.
 Each elf can carry one item, visible to the crew. A quick click gives it a short toss. The charge
 indicator reaches full strength after 1.2 seconds. Use G at the gold rim with your crosshair aimed
 into the opening for a drop that keeps the plane’s motion. Loose presents slide and tumble, and
