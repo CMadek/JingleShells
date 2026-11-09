@@ -190,7 +190,7 @@ func _make_house(base: Vector3, col: Color, nice: bool) -> void:
 	house.add_child(beam)
 
 	chimneys.append({"top": base + Vector3(2.2, 7.5, 1.0), "nice": nice})
-
+#penis
 
 func _build_bomber() -> void:
 	bomber = Node3D.new()
