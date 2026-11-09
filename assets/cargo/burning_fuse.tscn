@@ -1,0 +1,62 @@
+[gd_scene format=3]
+
+[sub_resource type="Shader" id="EmberShader"]
+code = "shader_type spatial;
+render_mode unshaded;
+varying float heat;
+void vertex() {
+    heat = 0.6 + 0.25 * sin(TIME * 19.0) + 0.15 * sin(TIME * 43.0);
+    VERTEX *= 0.85 + 0.3 * heat;
+}
+void fragment() {
+    ALBEDO = vec3(1.0, 0.18 + 0.57 * heat, 0.04) * 1.8;
+}"
+
+[sub_resource type="ShaderMaterial" id="EmberMaterial"]
+shader = SubResource("EmberShader")
+
+[sub_resource type="SphereMesh" id="Ember"]
+material = SubResource("EmberMaterial")
+radius = 0.014
+height = 0.03
+radial_segments = 8
+rings = 4
+
+[sub_resource type="StandardMaterial3D" id="SparkMaterial"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+vertex_color_is_srgb = true
+
+[sub_resource type="BoxMesh" id="Spark"]
+material = SubResource("SparkMaterial")
+size = Vector3(0.005, 0.024, 0.005)
+
+[sub_resource type="Gradient" id="Cooling"]
+offsets = PackedFloat32Array(0, 0.45, 1)
+colors = PackedColorArray(1, 1, 0.72, 1, 1, 0.59, 0.09, 1, 0.9, 0.13, 0.02, 1)
+
+[sub_resource type="Curve" id="Shrink"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[node name="BurningFuse" type="Node3D"]
+
+[node name="Ember" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Ember")
+
+[node name="Sparks" type="CPUParticles3D" parent="."]
+cast_shadow = 0
+amount = 14
+lifetime = 0.28
+preprocess = 0.28
+local_coords = true
+mesh = SubResource("Spark")
+direction = Vector3(0.45, 1, 0)
+spread = 67.0
+gravity = Vector3(0, -1.5, 0)
+initial_velocity_min = 0.24
+initial_velocity_max = 0.68
+particle_flag_align_y = true
+scale_amount_curve = SubResource("Shrink")
+color_ramp = SubResource("Cooling")

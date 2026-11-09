@@ -9,6 +9,7 @@ func _ready() -> void:
 	_key("jump", KEY_SPACE)     # also "climb" while piloting
 	_key("descend", KEY_SHIFT)  # dive while piloting
 	_key("interact", KEY_E)
+	_key("drop_cargo", KEY_G)
 
 
 func _key(action: StringName, keycode: Key) -> void:

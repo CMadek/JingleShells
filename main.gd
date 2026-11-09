@@ -110,3 +110,17 @@ func _return_to_menu(msg: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	status.text = msg
 	menu.show()
+
+
+# The lobby exists before player nodes do. Early motion packets can safely
+# arrive while a joining peer is still receiving the reliable player list.
+@rpc("any_peer", "unreliable_ordered")
+func sync_elf(pos: Vector3, yaw: float, pitch: float) -> void:
+	var world := get_node_or_null("World")
+	if not world:
+		return
+	var elf = world.players.get(multiplayer.get_remote_sender_id())
+	if elf:
+		elf.net_pos = pos
+		elf.net_yaw = yaw
+		elf.net_pitch = pitch
