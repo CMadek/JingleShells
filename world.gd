@@ -8,14 +8,35 @@ const HELM_POS := Vector3(0, 0, -5.2)   # stand here to take the helm
 const HATCH_POS := Vector3(0, 0, 3.0)   # stand here to drop presents
 const GRAVITY := 9.8
 const START_ALTITUDE := 45.0
-const MIN_ALTITUDE := 20.0
-const MAX_ALTITUDE := 90.0
 const MIN_SPEED := 8.0
-const MAX_SPEED := 30.0
 const TURN_RATE := 0.45
 const DROP_COOLDOWN_MS := 500
 const NICE_POINTS := 10
 const NAUGHTY_PENALTY := 5
+const MIN_ALTITUDE := 20.0
+const MAX_ALTITUDE := 1800.0
+
+# Flight model
+const STALL_SPEED := 9.0            # below this, no lift
+const CRUISE_SPEED := 14.0          # full lift at or above this
+const MAX_SPEED := 45.0             # hard cap (dive)
+const MIN_THROTTLE := 0.2           # idle; level cruise is ~14 m/s
+const THROTTLE_RATE := 0.5          # throttle lever change per second
+const MAX_THRUST := 12.0            # accel at full throttle
+const DRAG := 0.012                 # accel lost = DRAG * speed^2
+const PITCH_GRAVITY := 6.0          # speed lost per sin(pitch)
+const MAX_PITCH := deg_to_rad(35.0)
+const PITCH_RATE := deg_to_rad(35.0)
+const LEVEL_RATE := deg_to_rad(0.2)  # nose drifts back to level with no input
+const MAX_ROLL := deg_to_rad(40.0)
+const ROLL_RATE := deg_to_rad(15.0)
+const TURN_FACTOR := 0.6            # scales the coordinated-turn rate
+const STALL_NOSE_DROP := deg_to_rad(40.0)
+const STALL_SINK := 12.0
+
+
+
+
 
 var bomber: Node3D
 var players := {}          # peer id -> player node
@@ -26,12 +47,15 @@ var presents: Array = []   # {node: Node3D, vel: Vector3}
 var last_drop_ms := 0
 
 # Flight state. The host simulates it; clients receive it via sync_bomber.
-var heading := 0.0
+var heading := 0.0      # yaw
+var pitch := 0.0        # nose up = positive
+var roll := 0.0         # right wing down = positive
 var speed := 14.0
+var throttle := MIN_THROTTLE
+var flight_vel := Vector3.ZERO   # world-space velocity, used for dropped presents
 var in_steer := 0.0
 var in_throttle := 0.0
 var in_climb := 0.0
-
 var hud_score: Label
 var hud_info: Label
 var hud_msg: Label
@@ -349,21 +373,70 @@ func forward() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	if multiplayer.is_server():
-		speed = clampf(speed + in_throttle * 8.0 * delta, MIN_SPEED, MAX_SPEED)
-		heading -= in_steer * TURN_RATE * delta
-		bomber.position += forward() * speed * delta
-		bomber.position.y = clampf(bomber.position.y + in_climb * 8.0 * delta, MIN_ALTITUDE, MAX_ALTITUDE)
-		bomber.rotation.y = heading
-		sync_bomber.rpc(bomber.position, heading, speed)
+		_fly(delta)
+		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed)
 	_step_presents(delta)
+
+func _fly(delta: float) -> void:
+	# Throttle is a lever: it stays where you leave it.
+	throttle = clampf(throttle + in_throttle * THROTTLE_RATE * delta, MIN_THROTTLE, 1.0)
+
+	# 0 = stalled, 1 = full lift. Control authority also scales with airspeed.
+	var lift := clampf((speed - STALL_SPEED) / (CRUISE_SPEED - STALL_SPEED), 0.0, 1.0)
+	var authority := clampf(speed / CRUISE_SPEED, 0.3, 1.3)
+
+	# Roll: stick commands a bank angle, which self-levels when released.
+	roll = move_toward(roll, in_steer * MAX_ROLL, ROLL_RATE * authority * delta)
+
+	# Pitch: stick commands a rate. With no input the nose eases back to level
+	# (this is also the "autopilot" when nobody is at the helm).
+	if absf(in_climb) > 0.01:
+		pitch += in_climb * PITCH_RATE * authority * maxf(lift, 0.3) * delta
+	else:
+		pitch = move_toward(pitch, 0.0, LEVEL_RATE * delta)
+	pitch -= (1.0 - lift) * STALL_NOSE_DROP * delta   # stalled: nose drops
+	pitch = clampf(pitch, -MAX_PITCH, MAX_PITCH)
+
+	# Coordinated turn: yaw rate = g * tan(bank) / speed. Faster = wider turns.
+	# Positive roll is a right turn, which means heading decreases.
+	heading -= GRAVITY * tan(roll) / maxf(speed, 1.0) * TURN_FACTOR * delta
+
+	# Energy: thrust vs drag, and climbing trades speed for height.
+	var accel := MAX_THRUST * throttle - DRAG * speed * speed - PITCH_GRAVITY * sin(pitch)
+	speed = clampf(speed + accel * delta, 4.0, MAX_SPEED)
+
+	# Velocity follows the nose, minus sink from stalling and from banking.
+	var cp := cos(pitch)
+	var vel := Vector3(-sin(heading) * cp, sin(pitch), -cos(heading) * cp) * speed
+	vel.y -= (1.0 - lift) * STALL_SINK
+	vel.y -= (1.0 - cos(roll)) * 4.0   # lift lost to bank
+	flight_vel = vel
+	bomber.position += vel * delta
+
+	# Altitude limits: ground/ceiling push the nose back toward level.
+	if bomber.position.y < MIN_ALTITUDE:
+		bomber.position.y = MIN_ALTITUDE
+		pitch = maxf(pitch, 0.0)
+	elif bomber.position.y > MAX_ALTITUDE:
+		bomber.position.y = MAX_ALTITUDE
+		pitch = minf(pitch, 0.0)
+
+	_apply_attitude()
+	
+	
+func _apply_attitude() -> void:
+	# Godot's YXZ euler order = yaw, then pitch, then roll. Right wing down = -z.
+	bomber.rotation = Vector3(pitch, heading, -roll)
 
 
 @rpc("authority", "unreliable_ordered")
-func sync_bomber(pos: Vector3, h: float, s: float) -> void:
+func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float) -> void:
 	bomber.position = pos
-	bomber.rotation.y = h
 	heading = h
+	pitch = p
+	roll = r
 	speed = s
+	_apply_attitude()
 
 
 # ---------------------------------------------------------------- presents
