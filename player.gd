@@ -105,7 +105,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		position = world.HELM_POS
 		var v := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-		world.send_pilot_input(v.x, -v.y, Input.get_axis("descend", "jump"))
+		world.send_pilot_input(v.x, -v.y, Input.get_axis("move_forward", "move_back"))
 	else:
 		if is_on_floor():
 			velocity.y = JUMP_SPEED if Input.is_action_just_pressed("jump") else 0.0
