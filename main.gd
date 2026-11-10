@@ -10,10 +10,10 @@ var status: Label
 
 
 func _ready() -> void:
-	multiplayer.connected_to_server.connect(_start_world)
-	multiplayer.connection_failed.connect(_on_connection_failed)
-	multiplayer.server_disconnected.connect(_on_server_gone)
+	Steam.lobby_created.connect(_on_lobby_created)
+	Steam.lobby_joined.connect(_on_lobby_joined)
 	_build_menu()
+
 
 
 func _build_menu() -> void:
@@ -64,25 +64,35 @@ func _build_menu() -> void:
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(status)
 
+func _on_lobby_created(result: int, lobby_id: int) -> void:
+	if result != 1:
+		status.text = "Couldn't create lobby."
+		return
+	var peer := SteamMultiplayerPeer.new()
+	peer.create_host(0)
+	multiplayer.multiplayer_peer = peer
+	status.text = "Lobby ID: %d" % lobby_id   # share this, or use Steam's invite overlay
+	_start_world()
+	
+func _on_lobby_joined(lobby_id: int, _perm: int, _locked: bool, response: int) -> void:
+	if multiplayer.is_server():
+		return   # the host also gets this signal for its own lobby
+	if response != Steam.CHAT_ROOM_ENTER_RESPONSE_SUCCESS:
+		status.text = "Couldn't join lobby."
+		return
+	var peer := SteamMultiplayerPeer.new()
+	peer.create_client(Steam.getLobbyOwner(lobby_id), 0)
+	multiplayer.multiplayer_peer = peer
+	
 
 func _on_host() -> void:
-	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(PORT, MAX_ELVES)
-	if err != OK:
-		status.text = "Couldn't host (is the port already in use?)"
-		return
-	multiplayer.multiplayer_peer = peer
-	_start_world()
+	status.text = "Creating lobby..."
+	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, MAX_ELVES)
 
 
 func _on_join() -> void:
-	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(addr.text.strip_edges(), PORT)
-	if err != OK:
-		status.text = "Couldn't start connecting."
-		return
-	multiplayer.multiplayer_peer = peer
-	status.text = "Connecting..."
+	status.text = "Joining..."
+	Steam.joinLobby(addr.text.strip_edges().to_int())
 
 
 func _start_world() -> void:

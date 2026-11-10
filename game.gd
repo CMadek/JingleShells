@@ -2,6 +2,8 @@ extends Node
 ## Autoload. Registers input actions in code so the project has no input-map boilerplate.
 
 func _ready() -> void:
+	var res: Dictionary = Steam.steamInitEx(480)
+	print("Steam init:", res)
 	_key("move_forward", KEY_W)
 	_key("move_back", KEY_S)
 	_key("move_left", KEY_A)
