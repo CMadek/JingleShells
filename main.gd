@@ -82,14 +82,17 @@ func _on_join_requested(lobby_id: int, _friend_id: int) -> void:
 	Steam.joinLobby(lobby_id)
 
 func _on_lobby_joined(lobby_id: int, _perm: int, _locked: bool, response: int) -> void:
-	if multiplayer.is_server():
-		return   # the host also gets this signal for its own lobby
 	if response != Steam.CHAT_ROOM_ENTER_RESPONSE_SUCCESS:
-		status.text = "Couldn't join lobby."
+		status.text = "Couldn't join lobby (response %d)." % response
 		return
+	var owner_id: int = Steam.getLobbyOwner(lobby_id)
+	if owner_id == Steam.getSteamID():
+		return   # we're the host; the lobby_created path already set us up
 	var peer := SteamMultiplayerPeer.new()
-	peer.create_client(Steam.getLobbyOwner(lobby_id), 0)
+	var err := peer.create_client(owner_id, 0)
+	print("create_client: ", err)
 	multiplayer.multiplayer_peer = peer
+	status.text = "Connecting..."
 
 
 func _start_world() -> void:
