@@ -12,6 +12,7 @@ func _ready() -> void:
 	_key("descend", KEY_SHIFT)  # dive while piloting
 	_key("interact", KEY_E)
 	_key("drop_cargo", KEY_G)
+	_key("pilot_view", KEY_V)
 	
 func _key(action: StringName, keycode: Key) -> void:
 	if not InputMap.has_action(action):
