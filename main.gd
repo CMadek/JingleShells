@@ -5,6 +5,7 @@ const PORT := 7777
 const MAX_ELVES := 8
 
 var menu: CanvasLayer
+var seed_input: LineEdit
 var addr: LineEdit
 var status: Label
 
@@ -50,6 +51,11 @@ func _build_menu() -> void:
 	addr.placeholder_text = "Host IP address"
 	box.add_child(addr)
 
+	seed_input = LineEdit.new()
+	seed_input.placeholder_text = "Host map seed (blank for random)"
+	seed_input.max_length = 10
+	box.add_child(seed_input)
+
 	var host_btn := Button.new()
 	host_btn.text = "Host a game"
 	host_btn.pressed.connect(_on_host)
@@ -66,6 +72,10 @@ func _build_menu() -> void:
 
 
 func _on_host() -> void:
+	var entered := seed_input.text.strip_edges()
+	if entered != "" and (not entered.is_valid_int() or entered.to_int() <= 0 or entered.to_int() > 2147483647):
+		status.text = "Use a seed from 1 to 2147483647, or leave it blank."
+		return
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(PORT, MAX_ELVES)
 	if err != OK:
@@ -88,6 +98,8 @@ func _on_join() -> void:
 func _start_world() -> void:
 	menu.hide()
 	var w: Node3D = preload("res://world.gd").new()
+	if multiplayer.is_server():
+		w.map_seed = seed_input.text.strip_edges().to_int()
 	w.name = "World"
 	add_child(w)
 

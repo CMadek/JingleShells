@@ -42,7 +42,6 @@ var bomber: Node3D
 var players := {}          # peer id -> player node
 var pilot_id := 0          # 0 = helm is empty
 var score := 0
-var chimneys: Array = []   # {top: Vector3, nice: bool}
 const PILES := {Cargo.Kind.PRESENT: Vector3(-2, 0.55, 0), Cargo.Kind.BOMB: Vector3(2, 0.55, 0)}
 @export_range(1, 6) var pickup_range := 2.8
 @export_range(0.1, 4) var charge_seconds := 1.2
@@ -74,14 +73,27 @@ var hud_msg: Label
 var msg_timer := 0.0
 
 var _mats := {}
-var _beam_nice: StandardMaterial3D
-var _beam_bad: StandardMaterial3D
+const NeighborhoodStream := preload("res://neighborhood_stream.gd")
+const GRASS_REPEAT := 96.0
+var map_seed := 0
+var map_settings := Vector4i(4, 5, 64, 32)
+var neighborhood: NeighborhoodStream
+var grass := MeshInstance3D.new()
 
 
 func _ready() -> void:
 	_build_environment()
-	_build_village()
+	if multiplayer.is_server():
+		if map_seed == 0:
+			map_seed = randi_range(1, 2147483647)
+		map_settings = Vector4i(
+			clampi(ProjectSettings.get_setting("neighborhood/width",4),2,7),
+			clampi(ProjectSettings.get_setting("neighborhood/depth",5),2,7),
+			clampi(ProjectSettings.get_setting("neighborhood/house_limit",64),1,160),
+			clampi(ProjectSettings.get_setting("neighborhood/car_limit",32),0,80))
 	_build_bomber()
+	if multiplayer.is_server():
+		configure_map(map_seed, map_settings, bomber.position)
 	_build_hud()
 	if multiplayer.is_server():
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
@@ -164,12 +176,26 @@ func _build_environment() -> void:
 	moon.directional_shadow_max_distance = 150.0
 	add_child(moon)
 
-	var ground := MeshInstance3D.new()
+	# A seamless field under roads and gardens, with one draw call for open land.
+	var color_ramp := Gradient.new()
+	color_ramp.colors = PackedColorArray([Color("#4f7647"), Color("#849969")])
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.035
+	var grass_texture := NoiseTexture2D.new()
+	grass_texture.width = 256
+	grass_texture.height = 256
+	grass_texture.noise = noise
+	grass_texture.color_ramp = color_ramp
+	grass_texture.seamless = true
+	var material := StandardMaterial3D.new()
+	material.albedo_texture = grass_texture
+	material.uv1_scale = Vector3(64,64,1)
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(6000, 6000)
-	ground.mesh = pm
-	ground.material_override = _mat(Color(0.9, 0.93, 1.0))
-	add_child(ground)
+	pm.size = Vector2.ONE*GRASS_REPEAT*64
+	grass.mesh = pm
+	grass.material_override = material
+	grass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(grass)
 	var terrain := StaticBody3D.new()
 	var floor_shape := CollisionShape3D.new()
 	floor_shape.shape = WorldBoundaryShape3D.new()
@@ -177,66 +203,23 @@ func _build_environment() -> void:
 	add_child(terrain)
 
 
-func _build_village() -> void:
-	_beam_nice = _make_beam_mat(Color(0.2, 1.0, 0.4, 0.25))
-	_beam_bad = _make_beam_mat(Color(1.0, 0.2, 0.2, 0.25))
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 12345  # same seed on every peer = same village
-	var walls := [Color(0.8, 0.7, 0.55), Color(0.65, 0.45, 0.4), Color(0.55, 0.65, 0.7), Color(0.85, 0.8, 0.7)]
-	for gx in range(-6, 7):
-		for gz in range(-10, 11):
-			if rng.randf() < 0.2:
-				continue
-			var base := Vector3(gx * 24 + rng.randf_range(-4, 4), 0, gz * 24 + rng.randf_range(-4, 4))
-			var nice := rng.randf() < 0.7
-			var col: Color = walls[rng.randi() % walls.size()]
-			_make_house(base, col, nice)
-
-
-func _make_beam_mat(c: Color) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = c
-	return m
-
-
-func _make_house(base: Vector3, col: Color, nice: bool) -> void:
-	var house := StaticBody3D.new()
-	house.position = base
-	add_child(house)
-	_box(house, Vector3(8, 5, 7), Vector3(0, 2.5, 0), col, false, house)
-
-	var roof := MeshInstance3D.new()
-	var prism := PrismMesh.new()
-	prism.size = Vector3(9, 2.5, 7.6)
-	roof.mesh = prism
-	roof.material_override = _mat(Color(0.35, 0.2, 0.2))
-	roof.position = Vector3(0, 6.25, 0)
-	house.add_child(roof)
-	roof.create_convex_collision()
-
-	_box(house, Vector3(1.2, 3.5, 1.2), Vector3(2.2, 5.75, 1.0), Color(0.45, 0.2, 0.15))
-	if nice:
-		_box(house, Vector3(1.5, 1.5, 0.1), Vector3(-1.5, 2.5, 3.55), Color(1.0, 0.85, 0.4), true)
-
-	var beam := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.45
-	cyl.bottom_radius = 0.45
-	cyl.height = 8.0
-	beam.mesh = cyl
-	beam.material_override = _beam_nice if nice else _beam_bad
-	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	beam.position = Vector3(2.2, 11.5, 1.0)
-	house.add_child(beam)
-
-	chimneys.append({"top": base + Vector3(2.2, 7.5, 1.0), "nice": nice})
+@rpc("authority", "reliable")
+func configure_map(chosen_seed: int, settings: Vector4i, plane_pos: Vector3) -> void:
+	if neighborhood:
+		return
+	map_seed = chosen_seed
+	map_settings = settings
+	neighborhood = NeighborhoodStream.new()
+	neighborhood.name = "Neighborhoods"
+	add_child(neighborhood)
+	bomber.position = plane_pos
+	neighborhood.configure(map_seed, map_settings, plane_pos)
 
 func _build_bomber() -> void:
 	bomber = Node3D.new()
 	bomber.name = "Bomber"
-	bomber.position = Vector3(0, START_ALTITUDE, 300)
+	var district_size := NeighborhoodStream.District.span(map_settings.x, map_settings.y)
+	bomber.position = Vector3(0, START_ALTITUDE, district_size.y/2 - 18)
 	add_child(bomber)
 
 	var red := Color(0.7, 0.1, 0.1)
@@ -322,6 +305,7 @@ func request_players() -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
+	configure_map.rpc_id(id, map_seed, map_settings, bomber.position)
 	for pid in players.keys():
 		add_player.rpc_id(id, pid)
 	add_player.rpc(id)
@@ -641,10 +625,14 @@ func _step_cargo(delta: float) -> void:
 		var pos := body.position
 		var age := float(body.get_meta("age")) + delta
 		var delivered := false
-		if body.get_meta("kind") == Cargo.Kind.PRESENT and prev.y >= 7.5 and pos.y < 7.5:
-			var crossing := prev.lerp(pos, (prev.y - 7.5) / (prev.y - pos.y))
-			for chimney in chimneys:
-				if crossing.distance_to(chimney.top) < 0.5:
+		var district: NeighborhoodStream.District = neighborhood.districts.get(neighborhood.address(pos))
+		if body.get_meta("kind") == Cargo.Kind.PRESENT and pos.y < prev.y and district and pos.y < district.highest_chimney:
+			for chimney in district.lots:
+				var top: Vector3 = chimney.top
+				if prev.y < top.y or pos.y >= top.y:
+					continue
+				var crossing := prev.lerp(pos, (prev.y-top.y)/(prev.y-pos.y))
+				if crossing.distance_to(top) < 0.5:
 					_award(chimney)
 					delivered = true
 					break
@@ -737,6 +725,9 @@ func sync_score(s: int, msg: String) -> void:
 # ---------------------------------------------------------------- HUD
 
 func _process(delta: float) -> void:
+	if neighborhood:
+		neighborhood.advance(bomber.position, loose)
+		grass.position = Vector3(snappedf(bomber.position.x, GRASS_REPEAT), 0, snappedf(bomber.position.z, GRASS_REPEAT))
 	hud_score.text = "Score: %d" % score
 	var me := multiplayer.get_unique_id()
 	var txt := "Speed %d   Altitude %d\n" % [speed, bomber.position.y]

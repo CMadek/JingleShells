@@ -40,6 +40,16 @@ A departing elf takes their held item with them. Loose items expire after 90 sec
 from the plane. Releasing item 49 retires the oldest loose item. Tune these limits, pickup range,
 charge duration, throw speeds, and friction at the top of `world.gd`.
 
+## Neighborhoods
+
+Host with an empty **Host map seed** field for a new world, or enter a number from 1 to 2147483647 to replay one. Try **2412** for the example in the previews. Fly in any horizontal direction to reach new neighborhoods. Streets and sidewalks continue across district borders, and winter grass fills the space between homes. Returning to an address restores the same streets, houses, cars and delivery targets. Joining players start with the crew's current district.
+
+The `[neighborhood]` section in `project.godot` controls **each district's** width and depth in junctions (2–7 each), plus its house and car limits (up to 160 and 80). Defaults are 4 × 5, up to 64 homes and 32 parked cars. Each street tile is 20 units across. The host shares its seed and dimensions, and Godot prints the starting district's counts and generation time. Nearby districts build over several frames. Distant districts unload once loose cargo has cleared them. Roads, sidewalks and garden trees are batched locally. Static cars and houses share imported meshes with simplified collision hulls.
+
+Each lot has a coordinate ID, model, pose and world-space chimney opening imported from its Blender Delivery marker. The temporary `classify()` rule in `neighborhood.gd` gives each address a seeded 70% chance of being nice. Change that function to introduce level-design rules. Garden decoration and classification use their own random streams.
+
+Original source models, previews and the Blender reproduction script are in `art/neighborhood/`. Game exports are in `assets/neighborhood/`. To rebuild, run Blender with `-b --factory-startup -P art/neighborhood/build.py` from the project folder, then let Godot reimport the GLBs.
+
 ## Files
 
 - `main.gd` - lobby (host / join over ENet)
