@@ -12,6 +12,7 @@ var status: Label
 func _ready() -> void:
 	Steam.lobby_created.connect(_on_lobby_created)
 	Steam.lobby_joined.connect(_on_lobby_joined)
+	Steam.join_requested.connect(_on_join_requested)
 	_build_menu()
 
 
@@ -45,11 +46,6 @@ func _build_menu() -> void:
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(sub)
 
-	addr = LineEdit.new()
-	addr.text = "127.0.0.1"
-	addr.placeholder_text = "Host IP address"
-	box.add_child(addr)
-
 	var host_btn := Button.new()
 	host_btn.text = "Host a game"
 	host_btn.pressed.connect(_on_host)
@@ -57,7 +53,6 @@ func _build_menu() -> void:
 
 	var join_btn := Button.new()
 	join_btn.text = "Join game"
-	join_btn.pressed.connect(_on_join)
 	box.add_child(join_btn)
 
 	status = Label.new()
@@ -81,9 +76,10 @@ func _on_lobby_created(result: int, lobby_id: int) -> void:
 	status.text = "Lobby ID: %d" % lobby_id   # share this, or use Steam's invite overlay
 	_start_world()
 	
-func _on_join() -> void:
+func _on_join_requested(lobby_id: int, _friend_id: int) -> void:
 	status.text = "Joining..."
-	Steam.joinLobby(addr.text.strip_edges().to_int())	
+	print("joining", lobby_id)
+	Steam.joinLobby(lobby_id)
 
 func _on_lobby_joined(lobby_id: int, _perm: int, _locked: bool, response: int) -> void:
 	if multiplayer.is_server():
