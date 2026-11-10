@@ -7,6 +7,9 @@ const PlayerScript := preload("res://player.gd")
 
 const HELM_POS := Vector3(0, 0, -5.2)   # stand here to take the helm
 const HATCH_POS := Vector3(0, 0, 3.0)   # center of the deck opening
+const FURNACE := preload("res://assets/cargo/aft_furnace.glb")
+const FURNACE_POS := Vector3(0, 0, 6.24)
+const FIREBOX_MOUTH := FURNACE_POS + Vector3(0, 0.88, -0.55)
 const GRAVITY := 9.8
 const START_ALTITUDE := 45.0
 const MIN_SPEED := 8.0
@@ -255,6 +258,22 @@ func _build_bomber() -> void:
 		# Face the decorated front toward the center aisle.
 		display.rotation.y = signf(-center.x) * PI / 2.0
 		_label3d(bomber, "PRESENTS" if kind == Cargo.Kind.PRESENT else "BOMBS", center + Vector3.UP)
+	var furnace := FURNACE.instantiate() as Node3D
+	bomber.add_child(furnace)
+	furnace.position = FURNACE_POS
+	furnace.rotation.y = PI
+	var furnace_body := CollisionShape3D.new()
+	var casing := BoxShape3D.new()
+	casing.size = Vector3(1.68, 1.64, 1.03)
+	furnace_body.shape = casing
+	furnace_body.position = FURNACE_POS + Vector3.UP * 0.82
+	hull.add_child(furnace_body)
+	var glow := OmniLight3D.new()
+	glow.position = FURNACE_POS + Vector3(0, 1.04, 0.16)
+	glow.light_color = Color(1, 0.36, 0.10)
+	glow.light_energy = 0.9
+	glow.omni_range = 1.45
+	bomber.add_child(glow)
 	# Elves ride by parenting. Cargo needs a moving surface with physics velocity.
 	hull.collision_layer = 16
 	if multiplayer.is_server():
@@ -474,6 +493,13 @@ func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float) -> void:
 
 
 func aimed_pile(view: Transform3D) -> int:
+	var eye := bomber.to_local(view.origin)
+	var aim := bomber.global_basis.inverse() * -view.basis.z
+	if eye.z < FIREBOX_MOUTH.z and aim.z > 0.001:
+		var distance := (FIREBOX_MOUTH.z - eye.z) / aim.z
+		var hit := eye + aim * distance - FIREBOX_MOUTH
+		if distance <= pickup_range and absf(hit.x) <= 0.65 and hit.y >= -0.21 and hit.y <= 0.51:
+			return Cargo.Kind.COAL
 	for kind in PILES:
 		var offset: Vector3 = bomber.to_global(PILES[kind]) - view.origin
 		var along := offset.dot(-view.basis.z)
@@ -637,7 +663,8 @@ func _step_cargo(delta: float) -> void:
 					delivered = true
 					break
 		if not delivered and body.has_meta("landed"):
-			landing_burst.rpc(pos, body.get_meta("kind"))
+			if body.get_meta("kind") != Cargo.Kind.COAL:
+				landing_burst.rpc(pos, body.get_meta("kind"))
 			remove_loose.rpc(item_id)
 			continue
 		if delivered or age >= cargo_lifetime or pos.y < -5 or pos.distance_to(bomber.position) > 3000:
@@ -742,10 +769,13 @@ func _process(delta: float) -> void:
 				txt += "   Charge: %d%%" % roundi(100 * clampf(elapsed / charge_seconds, 0, 1))
 		elif elf and aimed_loose(elf.head.global_transform) != 0:
 			txt += "E to pick up dropped cargo"
-		elif elf and aimed_pile(elf.head.global_transform) != Cargo.Kind.EMPTY:
-			txt += "E to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
 		else:
-			txt += "WASD walk, Space jump, E at the helm to fly"
+			var kind := aimed_pile(elf.head.global_transform) if elf else Cargo.Kind.EMPTY
+			match kind:
+				Cargo.Kind.COAL: txt += "E to pull coal from the furnace"
+				Cargo.Kind.PRESENT: txt += "E to pick up a present"
+				Cargo.Kind.BOMB: txt += "E to pick up a bomb"
+				_: txt += "WASD walk, Space jump, E at the helm to fly"
 	txt += "\nGreen chimney = nice, red chimney = naughty. Esc frees the mouse."
 	hud_info.text = txt
 	if msg_timer > 0.0:

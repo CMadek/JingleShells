@@ -1,11 +1,15 @@
 extends RefCounted
 ## Original cargo props shared by the supply piles, carried models, and loose bodies.
 
-enum Kind { EMPTY, PRESENT, BOMB }
+enum Kind { EMPTY, PRESENT, BOMB, COAL }
 
 const HALF_SIZE := 0.24
 
 static func shape(kind: int) -> Shape3D:
+	if kind == Kind.COAL:
+		var lump := BoxShape3D.new()
+		lump.size = Vector3(0.28, 0.19, 0.24)
+		return lump
 	if kind == Kind.BOMB:
 		var sphere := SphereShape3D.new()
 		sphere.radius = HALF_SIZE
@@ -20,9 +24,12 @@ const BOMB_MODEL := preload("res://assets/cargo/bomb.glb")
 const PRESENT_PILE := preload("res://assets/cargo/present_pile.glb")
 const BURNING_FUSE := preload("res://assets/cargo/burning_fuse.tscn")
 const BOMB_PILE := preload("res://assets/cargo/bomb_pile.glb")
+const COAL_MODEL := preload("res://assets/cargo/anthracite.glb")
 
 
 static func model(kind: int) -> Node3D:
+	if kind == Kind.COAL:
+		return COAL_MODEL.instantiate()
 	if kind == Kind.PRESENT:
 		return PRESENT_MODEL.instantiate()
 	var bomb := BOMB_MODEL.instantiate() as Node3D
