@@ -13,7 +13,9 @@ func _ready() -> void:
 	_key("interact", KEY_E)
 	_key("drop_cargo", KEY_G)
 
-
+func _process(_d: float) -> void:
+	Steam.run_callbacks() 
+	
 func _key(action: StringName, keycode: Key) -> void:
 	if not InputMap.has_action(action):
 		InputMap.add_action(action)
