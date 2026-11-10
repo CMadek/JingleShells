@@ -526,7 +526,7 @@ func cargo_action(action: String, item_id := 0) -> void:
 		_cargo_rpc.rpc_id(1, action, elf.rotation.y, elf.pitch, item_id)
 
 
-@rpc("any_peer", "reliable")
+@rpc("any_peer", "unreliable_ordered")
 func _cargo_rpc(action: String, yaw: float, look_pitch: float, item_id: int) -> void:
 	if multiplayer.is_server():
 		_handle_cargo(multiplayer.get_remote_sender_id(), action, yaw, look_pitch, item_id)
