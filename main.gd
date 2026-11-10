@@ -64,16 +64,27 @@ func _build_menu() -> void:
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(status)
 
+	
+
+func _on_host() -> void:
+	status.text = "Creating lobby..."
+	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, MAX_ELVES)
+
 func _on_lobby_created(result: int, lobby_id: int) -> void:
 	if result != 1:
 		status.text = "Couldn't create lobby."
 		return
 	var peer := SteamMultiplayerPeer.new()
+	print("")
 	peer.create_host(0)
 	multiplayer.multiplayer_peer = peer
 	status.text = "Lobby ID: %d" % lobby_id   # share this, or use Steam's invite overlay
 	_start_world()
 	
+func _on_join() -> void:
+	status.text = "Joining..."
+	Steam.joinLobby(addr.text.strip_edges().to_int())	
+
 func _on_lobby_joined(lobby_id: int, _perm: int, _locked: bool, response: int) -> void:
 	if multiplayer.is_server():
 		return   # the host also gets this signal for its own lobby
@@ -83,16 +94,6 @@ func _on_lobby_joined(lobby_id: int, _perm: int, _locked: bool, response: int) -
 	var peer := SteamMultiplayerPeer.new()
 	peer.create_client(Steam.getLobbyOwner(lobby_id), 0)
 	multiplayer.multiplayer_peer = peer
-	
-
-func _on_host() -> void:
-	status.text = "Creating lobby..."
-	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, MAX_ELVES)
-
-
-func _on_join() -> void:
-	status.text = "Joining..."
-	Steam.joinLobby(addr.text.strip_edges().to_int())
 
 
 func _start_world() -> void:
