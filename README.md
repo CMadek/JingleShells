@@ -14,7 +14,7 @@ Developed with Godot 4.7.2. Multiplayer requires GodotSteam and SteamMultiplayer
 4. Friends choose **Play → Join Game**, paste the lobby ID, and select Join, or accept a Steam friend invite while at the menu.
 5. Use separate Steam accounts on two machines for multiplayer testing. The former IP/UDP-port workflow is no longer used.
 
-The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-1`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-2`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
 
 ## Menus and preferences
 
@@ -32,6 +32,7 @@ Options save to `user://settings.cfg`: window mode/resolution, VSync, frame limi
 | E | look at a nearby supply pile to pick up one item, or stand by the console to take the helm | leave |
 | Left mouse | hold to charge, release to throw along the crosshair | - |
 | G | drop the held item | - |
+| Left Ctrl (hold) | crouch; release to stand when clear | disabled |
 | Esc | open/close the flight menu | open/close the flight menu |
 
 ## Cargo
@@ -78,3 +79,7 @@ Manual multiplayer acceptance checks (require two Steam accounts; not yet verifi
 6. Open Options in game. Test Apply, Cancel, Restore Defaults, display confirmation, and timeout reversion. Relaunch and confirm saved preferences load.
 
 The generated title artwork has a simpler flat print treatment. The original artwork is retained at `assets/ui/jingle-bells-logo-original.png`; generation prompts sit beside the assets.
+
+## Elf characters
+
+Blender sources, asset scripts, pose details, and validation instructions are in [art/elf/README.md](art/elf/README.md). Hold Left Ctrl to crouch. The new player protocol requires matching builds on all peers.

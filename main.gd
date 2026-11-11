@@ -1,7 +1,7 @@
 extends Node
 
 const MAX_ELVES := 8
-const PROTOCOL := "jingle-bells-1"
+const PROTOCOL := "jingle-bells-2"
 var ui: CanvasLayer
 var lobby_id := 0
 var target_lobby := 0
@@ -140,7 +140,7 @@ func quit_game() -> void:
 	get_tree().quit()
 
 @rpc("any_peer", "unreliable_ordered")
-func sync_elf(pos: Vector3, yaw: float, pitch: float) -> void:
+func sync_elf(pos: Vector3, yaw: float, pitch: float, ducked: bool, grounded: bool) -> void:
 	var world := get_node_or_null("World")
 	if not world:
 		return
@@ -149,3 +149,5 @@ func sync_elf(pos: Vector3, yaw: float, pitch: float) -> void:
 		elf.net_pos = pos
 		elf.net_yaw = yaw
 		elf.net_pitch = pitch
+		elf.crouched = ducked
+		elf.net_grounded = grounded
