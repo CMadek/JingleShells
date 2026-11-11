@@ -114,4 +114,3 @@ func _ready() -> void:
 	get_viewport().get_texture().get_image().save_png("user://main-menu.png")
 	print("PASS: menu navigation, settings persistence/reversion, offline world lifecycle, input suppression and resume")
 	get_tree().quit()
-
