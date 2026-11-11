@@ -299,6 +299,8 @@ func _build_hud() -> void:
 	hud_info = _hud_label(layer, Vector2(20, 58), 18)
 	hud_msg = _hud_label(layer, Vector2(20, 150), 30)
 	var dot := ColorRect.new()
+	# Captured mouse events arrive at the center; the crosshair must not consume them.
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dot.color = Color(1, 1, 1, 0.8)
 	dot.custom_minimum_size = Vector2(4, 4)
 	dot.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
@@ -307,6 +309,7 @@ func _build_hud() -> void:
 
 func _hud_label(parent: Node, pos: Vector2, font_size: int) -> Label:
 	var l := Label.new()
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	l.position = pos
 	l.add_theme_font_size_override("font_size", font_size)
 	l.add_theme_constant_override("outline_size", 8)

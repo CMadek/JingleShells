@@ -1,135 +1,144 @@
 extends Node
-## Lobby: host a game or join one by IP, then spawn the World.
 
-const PORT := 7777
 const MAX_ELVES := 8
-
-var menu: CanvasLayer
-var addr: LineEdit
-var status: Label
-
+const PROTOCOL := "jingle-bells-1"
+var ui: CanvasLayer
+var lobby_id := 0
+var target_lobby := 0
+var operation := ""
+var pending_create := false
+var pending_join := 0
+var deadline := 0
 
 func _ready() -> void:
-	Steam.lobby_created.connect(_on_lobby_created)
-	Steam.lobby_joined.connect(_on_lobby_joined)
-	Steam.join_requested.connect(_on_join_requested)
+	get_tree().auto_accept_quit = false
+	if Game.steam_ready:
+		Game.steam.lobby_created.connect(_on_lobby_created)
+		Game.steam.lobby_joined.connect(_on_lobby_joined)
+		Game.steam.join_requested.connect(_on_join_requested)
 	multiplayer.connected_to_server.connect(_start_world)
-	multiplayer.connection_failed.connect(_on_connection_failed)
-	multiplayer.server_disconnected.connect(_on_server_gone)
-	_build_menu()
+	multiplayer.connection_failed.connect(func(): _return_to_menu("Connection failed. Check Steam and try again."))
+	multiplayer.server_disconnected.connect(func(): _return_to_menu("The host left the game."))
+	ui = preload("res://menu.gd").new()
+	add_child(ui)
 
+func _process(_delta: float) -> void:
+	if operation != "" and Time.get_ticks_msec() > deadline:
+		_return_to_menu("Connection timed out. You can try again once Steam finishes the pending request.")
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and is_instance_valid(ui):
+		ui.confirm_exit()
 
-func _build_menu() -> void:
-	menu = CanvasLayer.new()
-	add_child(menu)
+func busy() -> bool:
+	return operation != "" or pending_create or pending_join != 0
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.05, 0.07, 0.15)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu.add_child(bg)
+func host_game() -> void:
+	if not Game.steam_ready or busy() or get_node_or_null("World"):
+		return
+	operation = "host"
+	pending_create = true
+	deadline = Time.get_ticks_msec() + 20000
+	ui.show_page("connecting", "Creating Steam lobby…")
+	Game.steam.createLobby(1, MAX_ELVES) # Friends only.
 
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu.add_child(center)
+func join_game(id: int) -> void:
+	if not Game.steam_ready or busy() or get_node_or_null("World"):
+		return
+	target_lobby = id
+	pending_join = id
+	operation = "join"
+	deadline = Time.get_ticks_msec() + 20000
+	ui.show_page("connecting", "Joining Steam lobby…")
+	Game.steam.joinLobby(id)
 
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(360, 0)
-	box.add_theme_constant_override("separation", 12)
-	center.add_child(box)
+func _on_join_requested(id: int, _friend: int) -> void:
+	if get_node_or_null("World") or busy():
+		ui.show_notice("Leave the current session or finish the pending request before accepting an invite.")
+		return
+	join_game(id)
 
-	var title := Label.new()
-	title.text = "ELF BOMBER"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 48)
-	box.add_child(title)
-
-	var sub := Label.new()
-	sub.text = "Deliver presents. Mind the naughty list."
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(sub)
-
-	var host_btn := Button.new()
-	host_btn.text = "Host a game"
-	host_btn.pressed.connect(_on_host)
-	box.add_child(host_btn)
-
-	var join_btn := Button.new()
-	join_btn.text = "Join game"
-	box.add_child(join_btn)
-
-	status = Label.new()
-	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(status)
-
-	
-
-func _on_host() -> void:
-	status.text = "Creating lobby..."
-	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, MAX_ELVES)
-
-func _on_lobby_created(result: int, lobby_id: int) -> void:
+func _on_lobby_created(result: int, id: int) -> void:
+	pending_create = false
+	if operation != "host":
+		if result == 1:
+			Game.steam.leaveLobby(id)
+		return
 	if result != 1:
-		status.text = "Couldn't create lobby."
+		_return_to_menu("Couldn't create lobby (Steam response %d)." % result)
 		return
-	var peer := SteamMultiplayerPeer.new()
-	var err := peer.create_host(0)
-	if err != OK:
-		Steam.leaveLobby(lobby_id)
-		status.text = "Couldn't start the Steam host: %s." % error_string(err)
+	lobby_id = id
+	Game.steam.setLobbyData(id, "protocol", PROTOCOL)
+	Game.steam.setLobbyData(id, "name", "Jingle Bells")
+	var peer = ClassDB.instantiate("SteamMultiplayerPeer")
+	var error: int = peer.create_host(0)
+	if error != OK:
+		_return_to_menu("Couldn't start host: %s." % error_string(error))
 		return
 	multiplayer.multiplayer_peer = peer
-	status.text = "Lobby ID: %d" % lobby_id   # share this, or use Steam's invite overlay
 	_start_world()
-	
-func _on_join_requested(lobby_id: int, _friend_id: int) -> void:
-	status.text = "Joining..."
-	print("joining", lobby_id)
-	Steam.joinLobby(lobby_id)
 
-func _on_lobby_joined(lobby_id: int, _perm: int, _locked: bool, response: int) -> void:
-	if response != Steam.CHAT_ROOM_ENTER_RESPONSE_SUCCESS:
-		status.text = "Couldn't join lobby (response %d)." % response
+func _on_lobby_joined(id: int, _permissions: int, _locked: bool, response: int) -> void:
+	# Steam also sends this for our own newly created lobby.
+	if id == lobby_id and lobby_id != 0:
 		return
-	var owner_id: int = Steam.getLobbyOwner(lobby_id)
-	if owner_id == Steam.getSteamID():
-		return   # we're the host; the lobby_created path already set us up
-	var peer := SteamMultiplayerPeer.new()
-	var err := peer.create_client(owner_id, 0)
-	print("create_client: ", err)
+	if pending_create and operation == "host":
+		return
+	if id != pending_join:
+		if response == 1:
+			Game.steam.leaveLobby(id)
+		return
+	pending_join = 0
+	if operation != "join" or target_lobby != id:
+		if response == 1:
+			Game.steam.leaveLobby(id)
+		return
+	if response != 1:
+		var reason: String = {2: "Lobby unavailable.", 3: "You don't have permission to join.", 4: "Lobby is full.", 6: "You are banned from this lobby."}.get(response, "Couldn't join lobby (Steam response %d)." % response)
+		_return_to_menu(reason)
+		return
+	lobby_id = id
+	if Game.steam.getLobbyData(id, "protocol") != PROTOCOL:
+		_return_to_menu("This lobby is running an incompatible game version.")
+		return
+	var peer = ClassDB.instantiate("SteamMultiplayerPeer")
+	var error: int = peer.create_client(Game.steam.getLobbyOwner(id), 0)
+	if error != OK:
+		_return_to_menu("Couldn't connect: %s." % error_string(error))
+		return
 	multiplayer.multiplayer_peer = peer
-	status.text = "Connecting..."
-
+	ui.show_page("connecting", "Connecting to the host…")
 
 func _start_world() -> void:
-	menu.hide()
-	var w: Node3D = preload("res://world.gd").new()
-	w.name = "World"
-	add_child(w)
+	if operation == "" or get_node_or_null("World"):
+		return
+	operation = ""
+	var world: Node3D = preload("res://world.gd").new()
+	world.name = "World"
+	add_child(world)
+	ui.resume_game()
 
-
-func _on_connection_failed() -> void:
+func _return_to_menu(message: String = "") -> void:
+	operation = ""
+	target_lobby = 0
+	var world := get_node_or_null("World")
+	if world and multiplayer.is_server() and lobby_id != 0 and Game.steam_ready:
+		Game.steam.setLobbyJoinable(lobby_id, false)
+	if world:
+		remove_child(world)
+		world.queue_free()
+	if multiplayer.multiplayer_peer:
+		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
-	status.text = "Connection failed."
+	if lobby_id != 0 and Game.steam_ready:
+		Game.steam.leaveLobby(lobby_id)
+	lobby_id = 0
+	ui.show_page("main", message)
 
+func quit_game() -> void:
+	_return_to_menu()
+	get_tree().quit()
 
-func _on_server_gone() -> void:
-	_return_to_menu("The host left the game.")
-
-
-func _return_to_menu(msg: String) -> void:
-	var w := get_node_or_null("World")
-	if w:
-		remove_child(w)
-		w.queue_free()
-	multiplayer.multiplayer_peer = null
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	status.text = msg
-	menu.show()
-
-
-# The lobby exists before player nodes do. Early motion packets can safely
-# arrive while a joining peer is still receiving the reliable player list.
 @rpc("any_peer", "unreliable_ordered")
 func sync_elf(pos: Vector3, yaw: float, pitch: float) -> void:
 	var world := get_node_or_null("World")
