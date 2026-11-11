@@ -36,7 +36,8 @@ const STALL_SINK := 12.0
 
 
 
-
+const LOOSE_SMOOTHING := 14.0     # higher = snappier, lower = smoother
+const MAX_EXTRAPOLATE := 0.15     # seconds to coast without a new packet
 
 var bomber: Node3D
 var players := {}          # peer id -> player node
@@ -76,6 +77,11 @@ var msg_timer := 0.0
 var _mats := {}
 var _beam_nice: StandardMaterial3D
 var _beam_bad: StandardMaterial3D
+
+const SMOOTHING := 12.0   # higher = snappier, lower = smoother
+var net_pos := Vector3.ZERO
+var net_vel := Vector3.ZERO
+var net_att := Vector3.ZERO   # rotation target: pitch, heading, -roll
 
 
 func _ready() -> void:
@@ -424,12 +430,20 @@ func _apply_input(id: int, steer: float, throttle: float, climb: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	if multiplayer.is_server():
-		previous_plane = bomber.transform
-		physics_delta = delta
 		_fly(delta)
-		moving_hull.transform = bomber.transform
-		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed)
 		_step_cargo(delta)
+		# ...your sync_bomber sends...
+	else:
+		var step := net_vel * delta
+		net_pos += step
+		bomber.position += step          # coast first, then correct the remaining error
+		var k := 1.0 - exp(-SMOOTHING * delta)
+		bomber.position = bomber.position.lerp(net_pos, k)
+		bomber.rotation = Vector3(
+		lerp_angle(bomber.rotation.x, net_att.x, k),
+		lerp_angle(bomber.rotation.y, net_att.y, k),
+		lerp_angle(bomber.rotation.z, net_att.z, k))
+		_smooth_loose(delta)
 
 func _fly(delta: float) -> void:
 	# Throttle is a lever: it stays where you leave it.
@@ -484,12 +498,13 @@ func _apply_attitude() -> void:
 
 @rpc("authority", "unreliable_ordered")
 func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float) -> void:
-	bomber.position = pos
-	heading = h
-	pitch = p
-	roll = r
-	speed = s
-	_apply_attitude()
+	net_pos = pos
+	net_vel = Vector3(-sin(h) * cos(p), sin(p), -cos(h) * cos(p)) * s
+	net_att = Vector3(p, h, -r)
+	heading = h; pitch = p; roll = r; speed = s   # kept for the HUD
+	if bomber.position.distance_to(pos) > 20.0:   # first packet or big correction: snap
+		bomber.position = pos
+		bomber.rotation = net_att
 
 
 func aimed_pile(view: Transform3D) -> int:
@@ -636,6 +651,27 @@ func show_loose(item_id: int, kind: int, pose: Transform3D) -> void:
 	loose[item_id] = node
 
 
+
+func _smooth_loose(delta: float) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	var k := 1.0 - exp(-LOOSE_SMOOTHING * delta)
+	for id in loose:
+		var v: Node3D = loose[id]
+		if not is_instance_valid(v) or not v.has_meta("net_raw"):
+			continue
+		var raw: Transform3D = v.get_meta("net_raw")
+		var vel: Vector3 = v.get_meta("net_vel")
+		var since := now - float(v.get_meta("net_t"))
+		var coasting := since < MAX_EXTRAPOLATE
+		var target_pos := raw.origin + vel * minf(since, MAX_EXTRAPOLATE)
+		if v.position.distance_to(target_pos) > 5.0:
+			v.position = target_pos
+		else:
+			if coasting:
+				v.position += vel * delta   # move with the cargo, so the lerp has nothing to chase
+			v.position = v.position.lerp(target_pos, k)
+		v.quaternion = v.quaternion.slerp(raw.basis.get_rotation_quaternion(), k)
+
 func _step_cargo(delta: float) -> void:
 	var snapshot := {}
 	for item_id in loose.keys():
@@ -663,24 +699,42 @@ func _step_cargo(delta: float) -> void:
 		if Engine.get_physics_frames() % 3 == 0:
 			snapshot[item_id] = body.transform
 	if not snapshot.is_empty():
-		sync_loose.rpc(snapshot, bomber.transform)
+		sync_loose.rpc(snapshot, bomber.transform, Engine.get_physics_frames())
 
 
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
-func sync_loose(snapshot: Dictionary, plane_pose: Transform3D) -> void:
+func sync_loose(snapshot: Dictionary, plane_pose: Transform3D, frame: int) -> void:
+	print("sync_loose frame=", frame, " ids=", snapshot.keys(), " have=", loose.keys())
 	var inverse_plane := plane_pose.affine_inverse()
+	var now := Time.get_ticks_msec() / 1000.0
+	var cabin_box := AABB(Vector3(-3.5, -0.6, -7.5), Vector3(7, 4, 15))
 	for id in snapshot:
 		if not loose.has(id):
 			continue
 		var visual: Node3D = loose[id]
 		var pose: Transform3D = snapshot[id]
 		var cabin_pose := inverse_plane * pose
-		# Keep deck cargo aligned with the faster flight updates between snapshots.
-		var in_cabin := AABB(Vector3(-3.5, -0.6, -7.5), Vector3(7, 4, 15)).has_point(cabin_pose.origin)
+		var in_cabin := cabin_box.has_point(cabin_pose.origin)
 		var parent: Node3D = bomber if in_cabin else self
-		if visual.get_parent() != parent:
-			visual.reparent(parent, false)
-		visual.transform = cabin_pose if in_cabin else pose
+		var target := cabin_pose if in_cabin else pose
+
+		var first := not visual.has_meta("net_frame")
+		var reparented := visual.get_parent() != parent
+		var vel := Vector3.ZERO
+		if reparented:
+			visual.reparent(parent, true)   # keep global pose, so no pop when leaving the hatch
+		elif not first:
+			var dt := (frame - int(visual.get_meta("net_frame"))) / float(Engine.physics_ticks_per_second)
+			if dt > 0.0:
+				var raw: Transform3D = visual.get_meta("net_raw")
+				vel = (target.origin - raw.origin) / dt
+		if first:
+			visual.transform = target
+
+		visual.set_meta("net_raw", target)
+		visual.set_meta("net_vel", vel)
+		visual.set_meta("net_frame", frame)
+		visual.set_meta("net_t", now)
 
 
 @rpc("authority", "call_local", "reliable")
