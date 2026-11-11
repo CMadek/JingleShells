@@ -70,6 +70,10 @@ func _ready() -> void:
 	switch_view.pressed = true
 	get_viewport().push_input(switch_view, true)
 	assert(elf.chase.current)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert(elf.presentation.model.visible, "Pilot body must appear in chase view")
+	assert(not elf.presentation.hands.visible, "First-person arms must stay hidden at the helm")
 	var orbit_button := InputEventMouseButton.new()
 	orbit_button.button_index = MOUSE_BUTTON_RIGHT
 	orbit_button.position = motion.position
@@ -97,7 +101,13 @@ func _ready() -> void:
 	assert(not elf.dragging_orbit)
 	get_viewport().push_input(switch_view, true)
 	assert(elf.cam.current)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert(not elf.presentation.model.visible, "Pilot body must hide in cockpit view")
 	world.set_pilot(0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert(elf.presentation.hands.visible, "First-person arms must return after leaving helm")
 	assert(Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
 	main._return_to_menu("Test disconnect")
 	assert(main.get_node_or_null("World") == null)

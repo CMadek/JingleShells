@@ -365,8 +365,11 @@ func request_players() -> void:
 	sync_score.rpc_id(id, score, "")
 	set_pilot.rpc_id(id, pilot_id)
 	for pid in players:
+		crew_posture.rpc_id(id, pid, players[pid].crouched, players[pid].is_on_floor() if pid == 1 else players[pid].net_grounded)
 		if players[pid].held_kind != Cargo.Kind.EMPTY:
 			set_held.rpc_id(id, pid, players[pid].held_kind)
+			if charge_start.has(pid):
+				crew_action.rpc_id(id, pid, "charge")
 	for item_id in loose:
 		var body: Node3D = loose[item_id]
 		show_loose.rpc_id(id, item_id, body.get_meta("kind"), body.transform)
@@ -426,6 +429,7 @@ func _handle_helm(id: int) -> void:
 func set_pilot(id: int) -> void:
 	if id in players:
 		players[id].charging_since = -1
+		players[id].presentation.trigger("cancel")
 		charge_start.erase(id)
 	pilot_id = id
 	var me := multiplayer.get_unique_id()
@@ -594,7 +598,7 @@ func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float, item_
 	var elf = players[id]
 	var feet: Vector3 = elf.position if id == 1 else elf.net_pos
 	var aim := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(look_pitch, -1.5, 1.5))
-	var view := Transform3D(bomber.basis * aim, bomber.to_global(feet + Vector3.UP * 1.6))
+	var view := Transform3D(bomber.basis * aim, bomber.to_global(feet + Vector3.UP * elf.head.position.y))
 	if action == "pickup" and elf.held_kind == Cargo.Kind.EMPTY:
 		if item_id != 0:
 			if loose.has(item_id) and aimed_loose(view) == item_id:
@@ -612,8 +616,10 @@ func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float, item_
 		"charge":
 			if not charge_start.has(id):
 				charge_start[id] = Time.get_ticks_msec()
+				crew_action.rpc(id, "charge")
 		"cancel":
 			charge_start.erase(id)
+			crew_action.rpc(id, "cancel")
 		"drop", "throw":
 			var impulse := 0.0
 			if action == "throw":
@@ -623,6 +629,18 @@ func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float, item_
 				impulse = lerpf(min_throw_speed, max_throw_speed, clampf(seconds / charge_seconds, 0, 1))
 			charge_start.erase(id)
 			_release(id, elf.held_kind, view, impulse)
+			crew_action.rpc(id, action if elf.held_kind == Cargo.Kind.EMPTY else "cancel")
+
+@rpc("authority", "call_local", "reliable")
+func crew_action(id: int, action: String) -> void:
+	if players.has(id):
+		players[id].presentation.trigger(action)
+
+@rpc("authority", "reliable")
+func crew_posture(id: int, ducked: bool, grounded: bool) -> void:
+	if players.has(id):
+		players[id].crouched = ducked
+		players[id].net_grounded = grounded
 
 
 @rpc("authority", "call_local", "reliable")
@@ -815,7 +833,7 @@ func _process(delta: float) -> void:
 			txt += "E to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
 		else:
 			txt += "WASD walk, Space jump, E at the helm to fly"
-	txt += "\nGreen chimney = nice, red chimney = naughty. Esc frees the mouse."
+	txt += "\nGreen chimney = nice, red chimney = naughty. Ctrl crouches. Esc opens the menu."
 	hud_info.text = txt
 	if msg_timer > 0.0:
 		msg_timer -= delta

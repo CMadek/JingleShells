@@ -1,6 +1,6 @@
 extends CanvasLayer
 
-const HELP := "Work together to deliver presents down chimneys. Green beams mark nice houses (+10); red beams mark naughty houses (-5). Only presents score.\n\nWALKING\nWASD — Move   •   Space — Jump\nE — Pick up cargo you look at, or take/leave the nearby helm\nHold left mouse — Charge; release — Throw\nG — Drop held cargo\n\nAT THE HELM\nW/S — Throttle   •   A/D — Turn\nSpace — Climb   •   Shift — Dive   •   E — Leave helm\n\nEscape — Open/close menu. The online game continues."
+const HELP := "Work together to deliver presents down chimneys. Green beams mark nice houses (+10); red beams mark naughty houses (-5). Only presents score.\n\nWALKING\nWASD — Move   •   Space — Jump   •   Hold Ctrl — Crouch\nE — Pick up cargo you look at, or take/leave the nearby helm\nHold left mouse — Charge; release — Throw\nG — Drop held cargo\n\nAT THE HELM\nW/S — Throttle   •   A/D — Turn\nSpace — Climb   •   Shift — Dive   •   E — Leave helm\n\nEscape — Open/close menu. The online game continues."
 var root: Control
 var box: VBoxContainer
 var status: Label

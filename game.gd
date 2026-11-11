@@ -25,7 +25,7 @@ func _ready() -> void:
 	values.volume = clampf(values.volume, 0, 100)
 	values.sensitivity = clampf(values.sensitivity, 0.2, 3)
 	apply_settings()
-	for entry in [["move_forward", KEY_W], ["move_back", KEY_S], ["move_left", KEY_A], ["move_right", KEY_D], ["jump", KEY_SPACE], ["descend", KEY_SHIFT], ["interact", KEY_E], ["drop_cargo", KEY_G], ["pilot_view", KEY_V]]:
+	for entry in [["move_forward", KEY_W], ["move_back", KEY_S], ["move_left", KEY_A], ["move_right", KEY_D], ["jump", KEY_SPACE], ["descend", KEY_SHIFT], ["interact", KEY_E], ["drop_cargo", KEY_G], ["pilot_view", KEY_V], ["crouch", KEY_CTRL]]:
 		if not InputMap.has_action(entry[0]):
 			InputMap.add_action(entry[0])
 		var event := InputEventKey.new()
