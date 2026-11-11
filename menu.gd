@@ -63,6 +63,7 @@ func _block_input() -> void:
 	if world:
 		var elf = world.players.get(multiplayer.get_unique_id())
 		if elf:
+			elf.dragging_orbit = false
 			elf.charging_since = -1
 			world.cargo_action("cancel")
 			if world.pilot_id == elf.peer_id:
@@ -231,7 +232,8 @@ func resume_game() -> void:
 		return
 	root.hide()
 	Game.menu_open = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var world = get_parent().get_node("World")
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if world.pilot_id == multiplayer.get_unique_id() else Input.MOUSE_MODE_CAPTURED
 
 func confirm(text: String, callback: Callable) -> void:
 	if is_instance_valid(dialog):

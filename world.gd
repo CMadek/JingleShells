@@ -4,6 +4,7 @@ extends Node3D
 
 const Cargo := preload("res://cargo.gd")
 const PlayerScript := preload("res://player.gd")
+const Instruments := preload("res://assets/aircraft/instruments.gd")
 
 const HELM_POS := Vector3(0, 0, -5.2)   # stand here to take the helm
 const HATCH_POS := Vector3(0, 0, 3.0)   # center of the deck opening
@@ -39,6 +40,7 @@ const STALL_SINK := 12.0
 
 
 var bomber: Node3D
+var instruments: Instruments
 var players := {}          # peer id -> player node
 var pilot_id := 0          # 0 = helm is empty
 var score := 0
@@ -69,6 +71,7 @@ var in_steer := 0.0
 var in_throttle := 0.0
 var in_climb := 0.0
 var hud_score: Label
+var view_button: Button
 var hud_info: Label
 var hud_msg: Label
 var msg_timer := 0.0
@@ -233,37 +236,51 @@ func _make_house(base: Vector3, col: Color, nice: bool) -> void:
 
 	chimneys.append({"top": base + Vector3(2.2, 7.5, 1.0), "nice": nice})
 
+func _hull_box(hull: StaticBody3D, size: Vector3, center: Vector3) -> void:
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var collision := CollisionShape3D.new()
+	collision.shape = shape
+	collision.position = center
+	hull.add_child(collision)
+
+
 func _build_bomber() -> void:
 	bomber = Node3D.new()
 	bomber.name = "Bomber"
 	bomber.position = Vector3(0, START_ALTITUDE, 300)
 	add_child(bomber)
 
-	var red := Color(0.7, 0.1, 0.1)
-	var wood := Color(0.45, 0.28, 0.15)
-	var gold := Color(0.95, 0.8, 0.2)
-
+	var airframe := preload("res://assets/aircraft/north_star.glb").instantiate()
+	airframe.set_script(Instruments)
+	instruments = airframe as Instruments
+	bomber.add_child(airframe)
+	instruments.update_readings(self, 0.0)
+	var station := preload("res://assets/aircraft/dorsal_station.tscn").instantiate() as Node3D
+	bomber.add_child(station)
+	station.position = Vector3(0, 3.18, -2.8)
 	var hull := StaticBody3D.new()
 	hull.name = "Hull"
 	bomber.add_child(hull)
-	# Four slabs surround the opening at x = -1..1 and z = 2..4.
-	_box(hull, Vector3(6, 0.4, 9), Vector3(0, -0.2, -2.5), wood, false, hull)
-	_box(hull, Vector3(6, 0.4, 3), Vector3(0, -0.2, 5.5), wood, false, hull)
+	# Deck plates end at the lip so released cargo can clear the belly.
+	_hull_box(hull, Vector3(6,.4,9), Vector3(0,-.2,-2.5))
+	_hull_box(hull, Vector3(6,.4,3), Vector3(0,-.2,5.5))
 	for side in [-1, 1]:
-		_box(hull, Vector3(2, 0.4, 2), Vector3(side * 2, -0.2, 3), wood, false, hull)
-	_box(hull, Vector3(0.3, 2.5, 14), Vector3(-3, 1.25, 0), red, false, hull)     # left wall
-	_box(hull, Vector3(0.3, 2.5, 14), Vector3(3, 1.25, 0), red, false, hull)      # right wall
-	_box(hull, Vector3(6.3, 2.5, 0.3), Vector3(0, 1.25, 7), red, false, hull)     # back wall
-	_box(hull, Vector3(6.3, 1.0, 0.3), Vector3(0, 0.5, -7), red, false, hull)     # low front rail
-	_box(hull, Vector3(1.6, 1.0, 0.8), Vector3(0, 0.5, -6.3), wood, false, hull)  # helm console
-
-	for side in [-1, 1]:
-		_box(bomber, Vector3(10, 0.25, 3.5), Vector3(side * 8, -0.4, 1), gold)
-		_box(bomber, Vector3(0.09, 0.03, 2.1), HATCH_POS + Vector3(side * 1.05, 0, 0), gold, true)
-		_box(bomber, Vector3(2.2, 0.03, 0.09), HATCH_POS + Vector3(0, 0, side * 1.05), gold, true)
-	_box(bomber, Vector3(0.3, 3.0, 2.0), Vector3(0, 2.5, 7.8), gold)
-	_label3d(bomber, "HELM - press E", Vector3(0, 2.2, -5.8))
-	_label3d(bomber, "CARGO HATCH", Vector3(0, 1.7, 4.2))
+		_hull_box(hull, Vector3(2,.4,2), Vector3(side*2,-.2,3))
+		_hull_box(hull, Vector3(.14,3.1,14), Vector3(side*3,1.15,0))
+		_hull_box(hull, Vector3(1.9,.18,2.6), Vector3(side*2.20,3.03,-2.8))
+	_hull_box(hull, Vector3(6,3.2,.15), Vector3(0,1.50,7))
+	_hull_box(hull, Vector3(6,3.2,.15), Vector3(0,1.50,-7))
+	_hull_box(hull, Vector3(6,.18,2.9), Vector3(0,3.08,-5.55))
+	_hull_box(hull, Vector3(6,.18,8.5), Vector3(0,3.08,2.75))
+	_hull_box(hull, Vector3(2.29,.15,2.55), Vector3(0,2.10,-2.8))
+	for i in range(12):
+		var angle := TAU * i / 12.0
+		var radial := Vector3(sin(angle), 0, cos(angle))
+		_hull_box(hull, Vector3(.65,1.92,.09), Vector3(0,3.19,-2.8) + radial * 1.18)
+		(hull.get_child(-1) as CollisionShape3D).rotation.y = angle
+	_hull_box(hull, Vector3(2.49,1.1,.83), Vector3(0,.55,-6.98))
+	# The signed boards and coaming mark the helm and delivery hatch.
 	for kind in PILES:
 		var center: Vector3 = PILES[kind]
 		var display := Cargo.pile(kind)
@@ -290,11 +307,28 @@ func _build_bomber() -> void:
 	lamp.light_color = Color(1, 0.85, 0.6)
 	lamp.omni_range = 14.0
 	bomber.add_child(lamp)
+	var chart_light := OmniLight3D.new()
+	chart_light.position = Vector3(0, 2.2, -5.55)
+	chart_light.light_color = Color(1.0, .81, .55)
+	chart_light.light_energy = 1.4
+	chart_light.omni_range = 4.0
+	bomber.add_child(chart_light)
 
 
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+	view_button = Button.new()
+	view_button.text = "Chase view [V]"
+	view_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	view_button.offset_left = -178
+	view_button.offset_top = -56
+	view_button.offset_right = -20
+	view_button.offset_bottom = -18
+	view_button.visible = false
+	view_button.focus_mode = Control.FOCUS_NONE
+	layer.add_child(view_button)
+	view_button.pressed.connect(toggle_pilot_view)
 	hud_score = _hud_label(layer, Vector2(20, 14), 30)
 	hud_info = _hud_label(layer, Vector2(20, 58), 18)
 	hud_msg = _hud_label(layer, Vector2(20, 150), 30)
@@ -398,9 +432,24 @@ func set_pilot(id: int) -> void:
 		players[id].presentation.trigger("cancel")
 		charge_start.erase(id)
 	pilot_id = id
+	var me := multiplayer.get_unique_id()
+	var elf = players.get(me)
+	if elf:
+		elf.set_local_pilot(id == me)
+	view_button.visible = id == me
+	view_button.text = "Chase view [V]"
 	in_steer = 0.0
 	in_throttle = 0.0
 	in_climb = 0.0
+
+
+func toggle_pilot_view() -> void:
+	if Game.menu_open:
+		return
+	var me := multiplayer.get_unique_id()
+	if pilot_id == me and players.has(me):
+		var outside: bool = players[me].toggle_view()
+		view_button.text = "Cockpit view [V]" if outside else "Chase view [V]"
 
 
 func send_pilot_input(steer: float, throttle: float, climb: float) -> void:
@@ -432,7 +481,9 @@ func _physics_process(delta: float) -> void:
 		physics_delta = delta
 		_fly(delta)
 		moving_hull.transform = bomber.transform
-		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed)
+		var vertical_speed := (bomber.position.y - previous_plane.origin.y) / delta
+		instruments.update_readings(self, vertical_speed)
+		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed, throttle, vertical_speed)
 		_step_cargo(delta)
 
 func _fly(delta: float) -> void:
@@ -487,12 +538,14 @@ func _apply_attitude() -> void:
 
 
 @rpc("authority", "unreliable_ordered")
-func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float) -> void:
+func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: float, vertical_speed: float) -> void:
 	bomber.position = pos
 	heading = h
 	pitch = p
 	roll = r
 	speed = s
+	throttle = power
+	instruments.update_readings(self, vertical_speed)
 	_apply_attitude()
 
 
@@ -763,9 +816,13 @@ func _process(delta: float) -> void:
 	var txt := "Speed %d   Altitude %d\n" % [speed, bomber.position.y]
 	if pilot_id == me:
 		txt += "PILOTING: W/S speed, A/D turn, Space/Shift climb/dive, E to leave the helm"
+		if players.has(me) and players[me].chase.current:
+			txt += "   Hold RMB and drag to orbit"
 	else:
 		var elf = players.get(me)
-		if elf and elf.held_kind != Cargo.Kind.EMPTY:
+		if elf and elf.at_ladder():
+			txt += "E to use gunner ladder"
+		elif elf and elf.held_kind != Cargo.Kind.EMPTY:
 			txt += "Hold left click to throw   G to drop"
 			if elf.charging_since >= 0:
 				var elapsed := (Time.get_ticks_msec() - int(elf.charging_since)) / 1000.0
