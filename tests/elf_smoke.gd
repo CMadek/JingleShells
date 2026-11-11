@@ -1,5 +1,7 @@
 extends Node
 func snap(name: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("res://art/elf/" + name + ".png")
@@ -42,6 +44,18 @@ func _ready() -> void:
 	elf.rotation.y = 0
 	elf.set_physics_process(false)
 	world.set_physics_process(false)
+	# Both sleigh ladder directions must survive the character integration.
+	var interact := InputEventAction.new()
+	interact.action = "interact"
+	interact.pressed = true
+	elf.position = Vector3(1.14, .03, -.83)
+	assert(elf.at_ladder())
+	elf._unhandled_input(interact)
+	assert(elf.position.is_equal_approx(Vector3(.55, 2.19, -2.80)))
+	assert(elf.at_ladder())
+	elf._unhandled_input(interact)
+	assert(elf.position.is_equal_approx(Vector3(1.14, .03, -.83)))
+	elf.position = Vector3(0, .05, 0)
 	elf.carry(1)
 	await get_tree().create_timer(.5).timeout
 	await snap("hands_present")
