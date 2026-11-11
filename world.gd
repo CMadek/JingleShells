@@ -440,6 +440,8 @@ func set_pilot(id: int) -> void:
 
 
 func toggle_pilot_view() -> void:
+	if Game.menu_open:
+		return
 	var me := multiplayer.get_unique_id()
 	if pilot_id == me and players.has(me):
 		var outside: bool = players[me].toggle_view()

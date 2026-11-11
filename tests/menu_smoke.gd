@@ -62,6 +62,43 @@ func _ready() -> void:
 	assert(not Game.menu_open)
 	get_viewport().push_input(motion, true)
 	assert(not is_equal_approx(elf.rotation.y, paused_yaw))
+	# The sleigh's pilot camera must coexist with menu input suppression.
+	assert(InputMap.has_action("pilot_view"))
+	world.set_pilot(1)
+	var switch_view := InputEventAction.new()
+	switch_view.action = "pilot_view"
+	switch_view.pressed = true
+	get_viewport().push_input(switch_view, true)
+	assert(elf.chase.current)
+	var orbit_button := InputEventMouseButton.new()
+	orbit_button.button_index = MOUSE_BUTTON_RIGHT
+	orbit_button.position = motion.position
+	orbit_button.pressed = true
+	get_viewport().push_input(orbit_button, true)
+	assert(elf.dragging_orbit)
+	var before_orbit: float = elf.orbit_yaw
+	get_viewport().push_input(motion, true)
+	assert(not is_equal_approx(elf.orbit_yaw, before_orbit))
+	main.ui.show_page("pause")
+	assert(not elf.dragging_orbit)
+	before_orbit = elf.orbit_yaw
+	get_viewport().push_input(motion, true)
+	get_viewport().push_input(switch_view, true)
+	assert(is_equal_approx(elf.orbit_yaw, before_orbit) and elf.chase.current)
+	Input.action_press("move_forward")
+	Input.action_press("jump")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	assert(world.in_throttle == 0.0 and world.in_climb == 0.0)
+	Input.action_release("move_forward")
+	Input.action_release("jump")
+	main.ui.resume_game()
+	assert(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE)
+	assert(not elf.dragging_orbit)
+	get_viewport().push_input(switch_view, true)
+	assert(elf.cam.current)
+	world.set_pilot(0)
+	assert(Input.mouse_mode == Input.MOUSE_MODE_CAPTURED)
 	main._return_to_menu("Test disconnect")
 	assert(main.get_node_or_null("World") == null)
 	assert(Game.menu_open)
