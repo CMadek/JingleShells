@@ -3,3 +3,5 @@
 /android/
 
 .test-data/
+
+/art/elf/*.blend1
