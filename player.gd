@@ -77,17 +77,19 @@ func _ready() -> void:
 	if is_multiplayer_authority():
 		cam = Camera3D.new()
 		cam.current = true
+		cam.add_to_group("local_camera")
+		cam.fov = Game.values.fov
 		cam.far = 2000.0
 		head.add_child(cam)
 		body_mesh.visible = false
 
 
-func _input(event: InputEvent) -> void:
-	if not is_multiplayer_authority():
+func _unhandled_input(event: InputEvent) -> void:
+	if not is_multiplayer_authority() or Game.menu_open:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		rotate_y(-event.relative.x * MOUSE_SENS)
-		pitch = clampf(pitch - event.relative.y * MOUSE_SENS, -1.5, 1.5)
+		rotate_y(-event.relative.x * MOUSE_SENS * Game.values.sensitivity)
+		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.values.sensitivity * (-1.0 if Game.values.invert else 1.0), -1.5, 1.5)
 		head.rotation.x = pitch
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -99,10 +101,6 @@ func _input(event: InputEvent) -> void:
 			elif not event.pressed and charging_since >= 0:
 				charging_since = -1
 				world.cargo_action("throw")
-	elif event.is_action_pressed("ui_cancel"):
-		charging_since = -1
-		world.cargo_action("cancel")
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("interact"):
 		var item_id: int = world.aimed_loose(head.global_transform) if held_kind == Cargo.Kind.EMPTY else 0
 		if world.pilot_id != peer_id and item_id != 0:
@@ -138,14 +136,14 @@ func _physics_process(delta: float) -> void:
 	if world.pilot_id == peer_id:
 		velocity = Vector3.ZERO
 		position = world.HELM_POS
-		var v := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-		world.send_pilot_input(v.x, -v.y, Input.get_axis("descend", "jump"))
+		var v := Vector2.ZERO if Game.menu_open else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		world.send_pilot_input(v.x, -v.y, 0.0 if Game.menu_open else Input.get_axis("descend", "jump"))
 	else:
 		if is_on_floor():
-			velocity.y = JUMP_SPEED if Input.is_action_just_pressed("jump") else 0.0
+			velocity.y = JUMP_SPEED if (not Game.menu_open and Input.is_action_just_pressed("jump")) else 0.0
 		else:
 			velocity.y -= GRAVITY * delta
-		var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		var input := Vector2.ZERO if Game.menu_open else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		var dir := global_transform.basis * Vector3(input.x, 0, input.y)
 		velocity.x = dir.x * WALK_SPEED
 		velocity.z = dir.z * WALK_SPEED
