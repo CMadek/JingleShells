@@ -21,6 +21,7 @@ var pitch := 0.0
 var net_pos := Vector3.ZERO
 var net_yaw := 0.0
 var net_pitch := 0.0
+var authority_multiplier: int = int(is_multiplayer_authority()) 
 
 
 func _ready() -> void:
