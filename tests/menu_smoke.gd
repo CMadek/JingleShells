@@ -11,12 +11,31 @@ func _ready() -> void:
 		assert(main.ui.root.visible)
 	main.ui.show_page("options")
 	var saved: Dictionary = Game.values.duplicate()
-	main.ui.draft.volume = 65.0
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("res://.test-data/options-sliders.png")
+	for key in ["fps", "fov", "volume", "sensitivity"]:
+		var field: SpinBox = main.ui.number_fields[key]
+		var slider: HSlider = field.get_parent().get_child(0)
+		slider.value = slider.min_value
+		assert(field.value == slider.value and main.ui.draft[key] == slider.value)
+		field.value = slider.max_value
+		assert(slider.value == field.value and main.ui.draft[key] == field.value)
+	main.ui.number_fields.volume.get_line_edit().text = "65"
+	main.ui.number_fields.fps.value = saved.fps
+	main.ui.number_fields.fov.value = saved.fov
+	main.ui.number_fields.sensitivity.value = saved.sensitivity
 	main.ui.apply_options()
 	assert(Game.values.volume == 65.0)
 	var config := ConfigFile.new()
 	assert(config.load("user://settings.cfg") == OK)
 	assert(config.get_value("settings", "volume") == 65.0)
+	main.ui.show_page("options")
+	main.ui.number_fields.fov.get_line_edit().text = "999"
+	main.ui.number_fields.fov.apply()
+	assert(main.ui.number_fields.fov.value == 110)
+	main.ui.show_page("main")
+	assert(Game.values.fov == saved.fov, "Cancel discards slider and text edits")
 	main.ui.show_page("options")
 	main.ui.draft.mode = 2 if Game.values.mode != 2 else 0
 	main.ui.apply_options()
@@ -122,5 +141,9 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("user://main-menu.png")
+	main.queue_free()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().create_timer(.2).timeout
 	print("PASS: menu navigation, settings persistence/reversion, offline world lifecycle, input suppression and resume")
 	get_tree().quit()

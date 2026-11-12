@@ -42,7 +42,7 @@ func setup(player: CharacterBody3D) -> void:
 	apply_palette(model)
 	if hands:
 		apply_palette(hands)
-	last_position = actor.position
+	last_position = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position)
 
 func apply_palette(node: Node) -> void:
 	if node is MeshInstance3D:
@@ -67,9 +67,9 @@ func _process(delta: float) -> void:
 	if not actor:
 		return
 	phase += delta
-	var movement_speed: float = actor.position.distance_to(last_position) / maxf(delta, .001)
+	var movement_speed: float = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position).distance_to(last_position) / maxf(delta, .001)
 	moving = movement_speed > .3
-	last_position = actor.position
+	last_position = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position)
 	var local := actor.is_multiplayer_authority()
 	var pilot: bool = actor.world.pilot_id == actor.peer_id
 	var grounded: bool = actor.is_on_floor() if local else actor.net_grounded

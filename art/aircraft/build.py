@@ -147,7 +147,7 @@ def hull():
 def stages():
     hull()
     yield
-    for name in ["cabin","station","export"]:
+    for name in ["cabin","access","station","export"]:
         path=HERE/(name+".py")
         while not path.is_file():
             yield

@@ -13,9 +13,6 @@ for side in (-1,1):
     box("Hatch coaming",(side*1.042,-3,.013),(.085,2.18,.05),gold)
     box("Hatch threshold",(0,-3+side*1.043,.013),(2.04,.085,.05),gold)
     for i in range(4): rod("Hatch hinge",(side*1.10,-3.82+i*.48,.045),(side*1.10,-3.54+i*.48,.045),.046,iron)
-    for y in (-.98,.98):
-        line("Cargo bay hoop",[(side*2.91,y,.10),(side*2.91,y,.47),(side*1.43,y,.47),(side*1.43,y,.08)],.047,gold)
-        box("Anchor shoe",(side*1.43,y,.045),(.23,.21,.09),pine)
     for y in (-6,-3,0,3,5.8):
         box("Sconce shoe",(side*2.86,y,2.35),(.15,.32,.35),pine)
         rod("Lamp lens",(side*2.70,y,2.25),(side*2.70,y,2.48),.107,warm,16)

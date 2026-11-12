@@ -14,11 +14,10 @@ Hold Left Ctrl to crouch. Crouch uses a unique capsule per player, slows movemen
 
 Host-approved inventory results control held models. Charge/cancel/release poses are sent by the host. Remote held objects use a bone attachment; local objects and hands share one view attachment. Hands and cargo are hidden at the helm. Character bodies are hidden only for their own first-person camera. The crouch and grounded flags accompany existing player motion; late joiners receive reliable posture and current inventory/charge snapshots.
 
-Protocol is `jingle-bells-2`: all peers must use this version because sync_elf gained crouch and grounded arguments.
+Protocol is `jingle-bells-4`: peers must use matching builds because player poses now use world coordinates and aircraft access state is replicated.
 
 ## Checks and limits
 
 Run `godot --path . --rendering-method gl_compatibility res://tests/elf_smoke.tscn` with disposable user data. It tests crouch, overhead obstruction, releasing crouch through menus, independent capsules, and remote inventory/charge presentation, and writes in-game screenshots here. `tests/menu_smoke.tscn` checks menu/settings and mouse input integration.
 
-This feature branch starts at the menu merge and does not contain North Star, its ladder, or its chase camera. Integration with that branch and two-account Steam play remain required before release. Test cabin ceiling clearance while banking, helm/ladder transitions, and hands/body visibility when switching cockpit/chase view after merging. The generated poses and mitten contact are stylized; there is no finger IK or wall avoidance for the first-person mesh. Full two-client network delivery has not been verified by these local tests.
-
+The North Star sleigh, dorsal ladder, cockpit/chase cameras, and airfield preparation loop are integrated. Local smoke checks cover ladder travel, body/hand visibility across camera switches, crouch clearance, and boarding. Two-account Steam play remains required before release. Generated poses and mitten contact are stylized; there is no finger IK or wall avoidance for the first-person mesh.

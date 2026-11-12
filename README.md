@@ -1,7 +1,7 @@
 # Jingle Bells
 
 Co-op first-person Godot 4 game: you and your friends are elves crewing a Christmas bomber.
-One elf flies, another drops presents down chimneys. Green beams = nice kids (+10).
+One elf flies, another delivers presents by hitting houses. Green beams = nice kids (+10).
 Red beams = naughty houses (-5).
 
 Developed with Godot 4.7.2. Multiplayer requires GodotSteam and SteamMultiplayerPeer support, plus a running Steam client. The menus also work when Steam is unavailable.
@@ -9,14 +9,53 @@ Developed with Godot 4.7.2. Multiplayer requires GodotSteam and SteamMultiplayer
 ## Run it
 
 1. Open `project.godot` in Godot and press F5.
-2. Choose **Play → Host Game** to start an eight-player, friends-only Steam lobby and enter the plane.
+2. Choose **Play → Host Game** to start an eight-player, friends-only Steam lobby and enter the airfield depot.
 3. Press Escape, then **Copy Lobby ID** to share it, or **Invite Friends** to open the Steam overlay (when available).
 4. Friends choose **Play → Join Game**, paste the lobby ID, and select Join, or accept a Steam friend invite while at the menu.
 5. Use separate Steam accounts on two machines for multiplayer testing. The former IP/UDP-port workflow is no longer used.
 
-The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-2`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-4`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+
+## Airfield preparation and takeoff
+
+Each session starts inside The Naughty List supply depot. The evil quartermaster is decorative; purchasing is a future feature and the current supplies are free. Follow the flight-line signs and board the North Star. The original sleigh POC cabin and tail proportions are restored. Presents and bombs each occupy nine individual shelf cubbies along opposite sides of the cabin; collect them with E and drop them with G. The shop remains a placeholder.
+
+Aim at the boarding door, its brass switch, or the cargo hatch and press E. The boarding door slides; the bomber hatch has two leaves that meet in the centre and hinge downward at the outer edges. The ramp remains fully deployed with collision, regardless of door position. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots.
+
+At the helm: W raises throttle, S lowers it and applies ground brakes, A/D steers, Space raises the nose, and Shift lowers it. Reach 18 m/s and hold Space to take off. The boarding door stays under crew control: open, close, or reverse it with E at any speed, including in flight. Obstructions display a prompt. Touchdown levels the sleigh on its runners; hold S to stop. The original airborne flight model, animated instruments, dorsal ladder, V camera toggle, and chase orbit are retained. Flat-ground landing is arcade-style, without a crash/damage simulation. Low flight no longer causes the altitude clamp; out-of-world travel resets preparation.
+
+The runway is 1,200 m long and 52 m wide, clear of the village, with threshold markings and edge lights. Local checks measured about 43 m to lift off starting with an open door (including automatic closure) and 67 m to stop from the 45 m/s maximum. Approach speed and throttle affect stopping distance.
+
+World.begin_level() is the host hook for future mission progression: it clears cargo and resets the aircraft and crew to preparation. It is not connected to an automatic next-mission trigger. Joining players start in the depot. Protocol 4 requires matching builds.
+
+Run tests/airfield_smoke.tscn with Godot for onboard present/bomb pickup, actual walking/boarding, cargo unloading, ground/aboard movement, received flight poses, split-hatch motion, cargo passing through the opening, occupancy/snapshots, E-operated door closure while taxiing, helm interaction, takeoff with the door open, a permanent ramp, original cabin aisle clearance, individual shelf pickup and cargo support, landing, braking, instruments, and level reset. With --rendering-method gl_compatibility it saves airfield, boarding, and shop previews under .test-data; --headless runs assertions only. Existing menu and elf smoke scenes cover camera/menu integration, ladder use, crouching, and models. Two-account Steam testing remains required, particularly late joining during a hatch animation and loading/flying/landing together.
+
+The editable North Star build now runs art/aircraft/access.py before export to cut the actual boarding doorway. Regenerate with Blender --background --python art/aircraft/build.py.
+
+## Departure bell
+
+A brass bell hangs in the rear cabin on the starboard wall. Aim at the pull ring and press E to ring it; the rope pulls down, the bell/clapper swing, and the crew hears a positional chime. The host validates distance, line of sight, and a 1.2-second cooldown. Old rings are not replayed to late joiners. The existing master volume/mute controls apply.
+
+The original synthesized sound is assets/audio/departure_bell.wav; regenerate it with node art/audio/build_bell.cjs. tests/bell_smoke.tscn checks E interaction, menu suppression, range/occlusion, cooldown, animation reset, and audio playback. Two-account audio synchronization still needs Steam testing.
+
+## Flight and mechanical sounds
+
+The aircraft now has throttle-responsive engine pitch and volume, speed-dependent wind, runner rumble while taxiing, a touchdown thump, door/hatch motors and endpoint latches, and distinct bomb/present impacts. Sounds are positional and use the existing master volume/mute setting. Engines start quiet while parked; wind grows with airspeed and open access panels. Cabin listeners hear a softer engine mix than the exterior chase camera.
+
+Continuous sounds follow replicated flight and access state on each peer. Cargo sounds use the existing host-authorized impact RPC. One-shots use a bounded pool; resetting a level stops old effects, and leaving the world frees every audio source. Old landing/latch sounds are not replayed on initial join.
+
+All effects are original synthesis. Rebuild with node art/audio/build_flight.cjs (the bell uses build_bell.cjs). tests/audio_smoke.tscn covers throttle response, airborne/ground transitions, single touchdown events, door/hatch endpoints, cargo impacts, voice limits, volume routing, and reset/disconnect cleanup. Two-account Steam audio validation remains outstanding.
 
 ## Menus and preferences
+
+The front-end plays **Snowbound Dispatch**, an original 51-second Christmas waltz
+with celesta, soft chords, plucked bass and sleigh bells. It loops across menu pages,
+fades out when a game starts, and fades back in after leaving or disconnecting.
+In-game pause/options screens do not start the music. Master volume controls it.
+The composition and recording use no third-party samples or downloaded music;
+see assets/audio/PROVENANCE.md. Rebuild with `node art/audio/build_menu.cjs`.
+`tests/menu_music_smoke.tscn` checks playback, looping, transitions, mute routing,
+rapid reconnect/disconnect and cleanup.
 
 The main menu contains Play, Options, How to Play, Credits, and Exit, with decorative snowfall and a transparent title logo. Escape opens a compact flight menu with Resume, session sharing, options, help, and confirmed leave/exit actions. The online world keeps running; local movement, look, cargo, and flight input are suppressed while the menu is open.
 
@@ -37,15 +76,15 @@ Options save to `user://settings.cfg`: window mode/resolution, VSync, frame limi
 
 ## Cargo
 
-The two labeled piles have unlimited supplies. Look down at a pile until the pickup prompt appears.
-Aim at dropped cargo and press E to pick it up again. Bombs burst on contact with the ground or a roof, and presents scatter confetti. Both disappear on impact. Successful chimney deliveries still score normally.
+The two labeled shelving units aboard the aircraft have unlimited supplies. Aim at an individual present or bomb on any shelf until the pickup prompt appears. Shelf boards and dividers have player and cargo collision.
+Aim at dropped cargo and press E to pick it up again. Bombs burst on contact with the ground or a roof, and presents scatter confetti. Both disappear on impact outside the airfield; items dropped on the loading apron remain recoverable. Whole-house deliveries score; chimney hits earn a precision bonus.
 Each elf can carry one item, visible to the crew. A quick click gives it a short toss. The charge
 indicator reaches full strength after 1.2 seconds. Use G at the gold rim with your crosshair aimed
 into the opening for a drop that keeps the plane’s motion. Loose presents slide and tumble, and
-round bombs can roll when the pilot banks. Only presents score when they cross a chimney opening.
+round bombs can roll when the pilot banks. Nice-house impacts score +10, nice chimney impacts +15, and naughty-house impacts -5. Bombs destroy the house directly hit without changing the score.
 
 The host controls inventory, loose cargo, and deliveries. Joining players receive the current items.
-A departing elf takes their held item with them. Loose items expire after 90 seconds or when far
+A departing elf takes their held item with them. Loose items outside the cabin and airfield expire after 90 seconds or when far
 from the plane. Releasing item 49 retires the oldest loose item. Tune these limits, pickup range,
 charge duration, throw speeds, and friction at the top of `world.gd`.
 
@@ -83,3 +122,17 @@ The generated title artwork has a simpler flat print treatment. The original art
 ## Elf characters
 
 Blender sources, asset scripts, pose details, and validation instructions are in [art/elf/README.md](art/elf/README.md). Hold Left Ctrl to crouch. The new player protocol requires matching builds on all peers.
+
+Numeric options use sliders with editable number fields on the right. Either input updates the other; Apply saves, while Cancel discards the draft.
+
+## House deliveries and destruction
+
+Hit a nice house with a present to deliver it. Aim for the chimney for a bonus. Bombs destroy the houses they hit. Manual throws and drops still inherit aircraft momentum; there is no targeting assistance or homing. Each present scores at most once, and intact houses remain eligible for repeated deliveries.
+
+Near the hatch (3.2 m), holding a present shows a landing estimate: G drop by default, or charged throw while holding the mouse button. The estimate uses the same initial cargo release state and sweeps the present shape through gravity in 0.08-second steps, up to 20 seconds ahead, refreshed every 0.10 seconds. It distinguishes nice houses, naughty houses, and ground/obstacles. It does not model subsequent bouncing, moving-aircraft collisions after release, or all rotational contact differences. A blocked release or trajectory beyond the prediction horizon produces no marker.
+
+Tuning: `nice_points = 10`, `naughty_penalty = 5`, `chimney_bonus = 5` on World. Preview interval, step, and horizon are exposed on `delivery_preview.gd`. Destruction leaves collidable ruins, disables the original house/roof/chimney colliders and hides the beacon. Only the struck house is destroyed; debris is cosmetic and expires after two seconds, with a 24-effect cap. Destruction persists for the current world, including aircraft recovery resets. Loading a new world restores the village.
+
+House identity, recipient state and effects live in `house_delivery.gd`; shape sweeps live in `cargo_trajectory.gd`. The host resolves hits and sends reliable score/destruction events; late joiners receive destroyed-house snapshots without replaying explosions. Protocol `jingle-bells-7` requires matching builds.
+
+Validation: run `godot --path . --rendering-method gl_compatibility res://tests/delivery_smoke.tscn`. It covers swept roof/wall/chimney/ground impacts, actual falling-body prediction agreement, scoring once, penalties/bonuses, bomb destruction, repeated events, ruined-house ineligibility, and silent snapshot application. It saves `user://delivery-destruction.png`. These are local automated checks, not proof of two-account Steam networking. Before release, test concurrent players, late joins after destruction, and prediction while flying/banking at several altitudes on two machines.
