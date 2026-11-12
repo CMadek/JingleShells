@@ -88,6 +88,7 @@ def label(name,words,loc,rot,size,m):
     o.location=loc
     o.rotation_euler=rot
     c.materials.append(m)
+    return o
 def frame():
     for a in bpy.context.screen.areas:
         if a.type=="VIEW_3D":
@@ -99,55 +100,16 @@ def frame():
             s.shading.color_type="MATERIAL"
             s.shading.show_cavity=True
 
-# Distinct panel strips allow the belly, roof and glazing to have actual openings.
-profile=[(-1,-.38),(-1.04,.48),(-1.04,1.22),(-1,2.30),(-.82,2.91),(-.44,3.20),(.44,3.20),(.82,2.91),(1,2.30),(1.04,1.22),(1.04,.48),(1,-.38)]
-def outline(y,w,zscale=1,offset=0):
-    return [(u*w,y,z*zscale+offset) for u,z in profile]
 def panel(name,v,m,t=.055):
     o=obj(name,v,[(0,1,2,3)],m)
     mod=o.modifiers.new("Skin gauge","SOLIDIFY")
     mod.thickness=t
     return o
-def hull():
-    group("01 Airframe and windows")
-    stations=[(-12,.13,.13,1.5),(-10,1.16,.57,.86),(-7,2.89,.99,0),(-5,2.95,1,0),(-4,2.95,1,0),(-2,2.95,1,0),(0,2.95,1,0),(1.5,2.95,1,0),(4.1,2.95,1,0),(5.5,2.95,1,0),(7,2.85,.96,0),(8.5,2.30,.7,.05),(9.8,1.57,.37,.09),(10.55,.42,.17,.16),(10.68,.09,.09,.24)]
-    for k,(l,r) in enumerate(zip(stations,stations[1:])):
-        A,B=outline(*l),outline(*r)
-        for j in range(11):
-            if j==5 and l[0]==1.5: continue
-            window=(j in (2,8) and -7<=l[0]<8.5) or (7<=l[0]<9.8 and 2<=j<=8)
-            m=glass if window else (pine if j in (0,10) else red if k%4 else berry)
-            panel("Recessed glazing" if window else "Lapped fuselage plate",[A[j],A[j+1],B[j+1],B[j]],m)
-            if window: line("Brass glazing bead",[A[j],A[j+1],B[j+1],B[j],A[j]],.038,gold)
-        line("Former and panel seam",A,.064,pine)
-        if l[0]<-7 or l[0]>=7: panel("Lower fairing",[A[0],A[-1],B[-1],B[0]],pine)
-    group("02 Sweep surfaces")
-    def foil(name,sections,m):
-        return loft(name,[[(x,lead,z),(x,lead-.18*c,z+.12*c),(x,lead-c,z+.016*c),(x,lead-.66*c,z-.035*c),(x,lead-.14*c,z-.045*c)] for x,lead,c,z in sections],m,True,.035)
-    for s in (-1,1):
-        foil("Swept mainplane",[(s*3.08,2.65,5.6,.48),(s*6.1,1.4,4.36,.55),(s*15.4,-3.3,1.31,.80)],red)
-        foil("Wingtip flash",[(s*15.38,-3.30,1.31,.8),(s*16.15,-3.73,.88,.87)],pine)
-        foil("Tailplane",[(s*.62,-8.25,3.1,1.49),(s*5.6,-10.82,1.03,1.84)],pine)
-        for x,y in [(5.8,.55),(10.8,-1.80)]:
-            box("Pod pylon",(s*x,y,.06),(.21,1.48,1.26),iron)
-            for dx in (-.49,.49):
-                cx=s*(x+dx)
-                def ring(d,r):
-                    return [(cx+r*cos(i*pi/16),y+d,-.64+r*sin(i*pi/16)) for i in range(32)]
-                for name,spec,m in [("Nacelle",[(-1.52,.32),(-.85,.45),(.73,.47),(1.0,.40)],pine),("Intake lip",[(.94,.43),(1.04,.40),(1.04,.33),(.64,.31)],gold),("Inlet shadow",[(.64,.31),(.61,.30)],iron),("Exhaust",[(-1.53,.32),(-1.54,.25),(-1.28,.21)],iron)]:
-                    loft(name,[ring(d,r) for d,r in spec],m,name=="Inlet shadow")
-        runner=[(s*2.06,-8,-.84),(s*2.06,-6,-1.56),(s*2.06,-4,-1.72),(s*2.06,5.4,-1.72),(s*2.06,7.4,-1.46),(s*2.06,8.6,-.81),(s*2.06,8.82,-.37),(s*2.06,8.61,-.14),(s*2.06,8.33,-.28)]
-        loft("Scrolled sleigh runner",[[(x+a,y,z+b) for a,b in [(-.14,0),(0,.115),(.14,0),(0,-.095)]] for x,y,z in runner],gold)
-        for y in (-5,0,4.8):
-            rod("Runner brace",(s*2.4,y,-.20),(s*2.06,y+.44,-1.62),.087,pine)
-    loft("Swept vertical fin",[[(x,y,z) for y,z in [(-8.1,2),(-10.35,5.25),(-11.35,5.39),(-11.55,1.68)]] for x in (-.12,.12)],red,True,.07)
-    for s in (-1,1):
-        label("Fin number","N P   2 5",(s*.126,-10.45,3.49),(pi/2,0,s*pi/2),.34,cream)
-    frame()
+exec(compile((HERE/"rounded.py").read_text(),str(HERE/"rounded.py"),"exec"),globals())
 def stages():
     hull()
     yield
-    for name in ["cabin","access","station","export"]:
+    for name in ["cabin","mk2","interior_details","access","export"]:
         path=HERE/(name+".py")
         while not path.is_file():
             yield

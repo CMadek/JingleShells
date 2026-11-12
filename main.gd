@@ -1,7 +1,7 @@
 extends Node
 
 const MAX_ELVES := 8
-const PROTOCOL := "jingle-bells-7"
+const PROTOCOL := "jingle-bells-15"
 var ui: CanvasLayer
 var menu_music: AudioStreamPlayer
 var lobby_id := 0

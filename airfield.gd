@@ -1,6 +1,6 @@
 extends Node3D
 ## Depot and runway. All coordinates use the world frame.
-const PARK := Vector3(0, 1.82, 840)
+const PARK := Vector3(0, 2.92, 840)
 const SPAWN := Vector3(-31, .2, 845)
 const SUPPLIES := {1: Vector3(-32, .55, 837), 2: Vector3(-25, .55, 837)}
 const LENGTH := 1200.0
@@ -22,6 +22,15 @@ func build(w: Node3D) -> void:
 	for z in [-275,875]:
 		for x in [-20,-16,-12,-8,8,12,16,20]:
 			box(Vector3(2,.02,14),Vector3(x,.05,z),Color("ded9bf"),false)
+	# Boarding stairs belong to the airfield and stay behind when the plane departs.
+	var boarding := Node3D.new()
+	boarding.name = "BoardingSteps"
+	add_child(boarding)
+	for i in 12:
+		var height := PARK.y*(i+1)/12.0
+		world._box(boarding,Vector3(4.7/12,height,1.8),Vector3(-9+(i+.5)*4.7/12,height/2,PARK.z-4.8),Color("425c52"),false)
+		world._box(boarding,Vector3(.035,.025,1.78),Vector3(-8.98+i*4.7/12,height+.012,PARK.z-4.8),Color("c2a157"),false)
+	world._walkway_wedge(solid,1.8,Vector3(-9,0,PARK.z-4.8),Vector3(-4.3,PARK.y,PARK.z-4.8))
 	# Shop room has an east-facing exit onto the flight line.
 	var timber := Color("382c30")
 	box(Vector3(16,.18,18),Vector3(-28,-.02,841),Color("68503a"))

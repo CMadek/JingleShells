@@ -71,7 +71,7 @@ func _process(delta: float) -> void:
 	moving = movement_speed > .3
 	last_position = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position)
 	var local := actor.is_multiplayer_authority()
-	var pilot: bool = actor.world.pilot_id == actor.peer_id
+	var pilot: bool = actor.world.pilot_id == actor.peer_id or actor.world.stations.station_for(actor.peer_id) != ""
 	var grounded: bool = actor.is_on_floor() if local else actor.net_grounded
 	if grounded and not was_grounded:
 		trigger("land")
@@ -84,7 +84,9 @@ func _process(delta: float) -> void:
 	if is_instance_valid(actor.held_model):
 		actor.held_model.visible = not pilot
 	var next := "idle"
-	if pilot:
+	if actor.world.stations.station_for(actor.peer_id) == "turret":
+		next = "crouch_idle"
+	elif pilot:
 		next = "helm"
 	elif action_time > 0:
 		next = action
@@ -103,7 +105,7 @@ func _process(delta: float) -> void:
 		current = next
 	if animation:
 		animation.speed_scale = clampf(movement_speed / (actor.crouch_speed if actor.crouched else actor.WALK_SPEED), .4, 1.6) if "walk" in next else 1.0
-	model.visible = not local or actor.cam != actor.get_viewport().get_camera_3d()
+	model.visible = not local or (actor.cam != actor.get_viewport().get_camera_3d() and actor.world.stations.station_for(actor.peer_id) != "turret")
 	if hands:
 		hands.visible = not model.visible and not pilot
 		var lift := .0 if carrying else -.20

@@ -1,6 +1,26 @@
 extends CanvasLayer
 
-const HELP := "Board the North Star and collect presents/bombs from the individual cabin shelves with E. At 18 m/s hold Space to take off. The ramp stays deployed; E opens or closes the boarding door at any speed and operates the split bomber hatch.\n\nHit a nice house with a present to deliver it (+10). Aim for the chimney for a bonus (+5). Naughty houses cost 5 points. Bombs destroy the houses they hit. Near the hatch, the landing marker estimates your G drop, or your throw while charging.\n\nWALKING\nWASD — Move   •   Space — Jump   •   Hold Ctrl — Crouch\nE — Pick up cargo, operate door/hatch, or take/leave the nearby helm\nHold left mouse — Charge; release — Throw\nG — Drop held cargo\n\nAT THE HELM\nW/S — Throttle (hold S to brake on ground)   •   A/D — Turn\nSpace — Climb / lift off at 18 m/s   •   Shift — Dive   •   E — Leave helm\n\nEscape — Open/close menu. The online game continues."
+const HELP := """NORTH STAR MK II
+Collect presents and bombs from the rear stores with E. Carry them to the loading end of either return track and press E. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
+
+With empty hands, aim at any queued item and press E to retrieve it. Reload it at the loading end to move it to the back. Full or cycling tracks keep your held item safe.
+
+DELIVERY CONSOLE
+Aim at the port-side console ahead of the tracks and press E with empty hands. Both cargo launchers are controlled here: 1 selects LEFT, 2 selects RIGHT, and Space releases one item. The green circle and center crosshair predict the selected cargo landing after the 0.45-second release delay, assuming current flight inputs continue. Cargo is never guided. Q leaves the station.
+
+VENTRAL TURRET
+Click the BELLY GUN hatch to the right of the cockpit stairs with empty hands to climb into the glass pod. Ctrl returns you to the cabin beside the stairs. Mouse aims, left click fires a snowball, and holding right mouse lets you look around without moving the guns. The turret rotates through 360 degrees; shots into the aircraft are blocked. Snowballs create cosmetic impacts only. A teammate can operate delivery independently.
+
+FLIGHT AND DELIVERY
+Walk up the cockpit steps; E at the helm enters/leaves. W/S throttle (hold S to brake), A/D turn, Space climb/take off at 18 m/s, Shift descend. V toggles cockpit/chase view; right-drag orbits the chase camera.
+Presents: nice house +10, precise nice chimney +15 total; naughty house −5. Bombs destroy only the house directly hit and add no score.
+
+WALKING
+WASD move • Space jump • Ctrl crouch • E interact
+Hold/release left mouse to throw held cargo • G drop
+E operates the boarding door and departure bell. The rear emergency exit tears off when released and restores next level.
+
+Escape opens the menu. Online play continues; your gameplay input is suppressed. Q leaves the delivery console; Ctrl leaves the turret."""
 var root: Control
 var box: VBoxContainer
 var status: Label

@@ -18,17 +18,17 @@ The development Steam app ID is 480. Both players need the same protocol version
 
 ## Airfield preparation and takeoff
 
-Each session starts inside The Naughty List supply depot. The evil quartermaster is decorative; purchasing is a future feature and the current supplies are free. Follow the flight-line signs and board the North Star. The original sleigh POC cabin and tail proportions are restored. Presents and bombs each occupy nine individual shelf cubbies along opposite sides of the cabin; collect them with E and drop them with G. The shop remains a placeholder.
+Each session starts inside The Naughty List supply depot. The evil quartermaster is decorative; purchasing is a future feature and the current supplies are free. Follow the flight-line signs and board the North Star. A wide passage through the former rear bulkhead leads to a separate windowless cargo room. Six bombs sit on a low rack on the left and six presents on a low rack on the right, leaving the centre clear; collect them with E and drop them with G. The shop remains a placeholder.
 
-Aim at the boarding door, its brass switch, or the cargo hatch and press E. The boarding door slides; the bomber hatch has two leaves that meet in the centre and hinge downward at the outer edges. The ramp remains fully deployed with collision, regardless of door position. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots.
+Aim at the boarding door or its brass switch and press E. The boarding door slides. Mk II replaces the open delivery hatch with guarded dual chutes and a continuous cabin floor. Boarding stairs stay at the airfield when the aircraft departs; there is no attached ramp. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots.
 
-At the helm: W raises throttle, S lowers it and applies ground brakes, A/D steers, Space raises the nose, and Shift lowers it. Reach 18 m/s and hold Space to take off. The boarding door stays under crew control: open, close, or reverse it with E at any speed, including in flight. Obstructions display a prompt. Touchdown levels the sleigh on its runners; hold S to stop. The original airborne flight model, animated instruments, dorsal ladder, V camera toggle, and chase orbit are retained. Flat-ground landing is arcade-style, without a crash/damage simulation. Low flight no longer causes the altitude clamp; out-of-world travel resets preparation.
+At the helm: W raises throttle, S lowers it and applies ground brakes, A/D steers, Space raises the nose, and Shift lowers it. Reach 18 m/s and hold Space to take off. The boarding door stays under crew control: open, close, or reverse it with E at any speed, including in flight. Obstructions display a prompt. Touchdown levels the sleigh on its runners; hold S to stop. The original airborne flight model, animated instruments, V camera toggle, and chase orbit are retained. Flat-ground landing is arcade-style, without a crash/damage simulation. Low flight no longer causes the altitude clamp; out-of-world travel resets preparation.
 
 The runway is 1,200 m long and 52 m wide, clear of the village, with threshold markings and edge lights. Local checks measured about 43 m to lift off starting with an open door (including automatic closure) and 67 m to stop from the 45 m/s maximum. Approach speed and throttle affect stopping distance.
 
 World.begin_level() is the host hook for future mission progression: it clears cargo and resets the aircraft and crew to preparation. It is not connected to an automatic next-mission trigger. Joining players start in the depot. Protocol 4 requires matching builds.
 
-Run tests/airfield_smoke.tscn with Godot for onboard present/bomb pickup, actual walking/boarding, cargo unloading, ground/aboard movement, received flight poses, split-hatch motion, cargo passing through the opening, occupancy/snapshots, E-operated door closure while taxiing, helm interaction, takeoff with the door open, a permanent ramp, original cabin aisle clearance, individual shelf pickup and cargo support, landing, braking, instruments, and level reset. With --rendering-method gl_compatibility it saves airfield, boarding, and shop previews under .test-data; --headless runs assertions only. Existing menu and elf smoke scenes cover camera/menu integration, ladder use, crouching, and models. Two-account Steam testing remains required, particularly late joining during a hatch animation and loading/flying/landing together.
+Run tests/airfield_smoke.tscn with Godot for onboard present/bomb pickup, actual walking/boarding, cargo unloading, ground/aboard movement, received flight poses, split-hatch motion, cargo passing through the opening, occupancy/snapshots, E-operated door closure while taxiing, helm interaction, takeoff with the door open, stationary boarding stairs and walkable cockpit steps, original cabin aisle clearance, individual shelf pickup and cargo support, landing, braking, instruments, and level reset. With --rendering-method gl_compatibility it saves airfield, boarding, and shop previews under .test-data; --headless runs assertions only. Existing menu and elf smoke scenes cover camera/menu integration, belly-station access, crouching, and models. Two-account Steam testing remains required, particularly late joining during a hatch animation and loading/flying/landing together.
 
 The editable North Star build now runs art/aircraft/access.py before export to cut the actual boarding doorway. Regenerate with Blender --background --python art/aircraft/build.py.
 
@@ -136,3 +136,38 @@ Tuning: `nice_points = 10`, `naughty_penalty = 5`, `chimney_bonus = 5` on World.
 House identity, recipient state and effects live in `house_delivery.gd`; shape sweeps live in `cargo_trajectory.gd`. The host resolves hits and sends reliable score/destruction events; late joiners receive destroyed-house snapshots without replaying explosions. Protocol `jingle-bells-7` requires matching builds.
 
 Validation: run `godot --path . --rendering-method gl_compatibility res://tests/delivery_smoke.tscn`. It covers swept roof/wall/chimney/ground impacts, actual falling-body prediction agreement, scoring once, penalties/bonuses, bomb destruction, repeated events, ruined-house ineligibility, and silent snapshot application. It saves `user://delivery-destruction.png`. These are local automated checks, not proof of two-account Steam networking. Before release, test concurrent players, late joins after destruction, and prediction while flying/banking at several altitudes on two machines.
+
+The aft room has a side emergency exit behind the bomb rack. Press E at its handle to tear the door off and fling it outside. It stays open for the level, restores on level reset, and late joiners receive its current state without replaying debris. The front boarding door and delivery hatch retain their normal controls.
+
+## North Star Mk II crew stations
+
+The cabin now has two five-item return tracks feeding independent enclosed underside
+chutes. Load held cargo with E at a track's loading end; with empty hands, aim at any
+queued item and E retrieves that item. Reloading moves it to the tail. Numbers 1–5,
+NEXT, and arrows show FIFO order. A busy or full rack never consumes held cargo.
+
+At the delivery console (port side, forward of the racks), E enters; 1/2 select a
+chute, Space releases one item, Q leaves. The underside view shows both outlets and
+labeled circular first-impact estimates: L/single ring, R/double ring. Empty chutes
+hide their estimate. Blocked outlets preserve the queue. Cargo remains ballistic.
+
+Click the BELLY GUN hatch to the right of the cockpit stairs to enter with empty hands. Mouse aims,
+left click fires a cosmetic snowball, Ctrl returns to the cabin. The 360° turret has a bounded vertical
+arc, host-validated ownership and fire rate, and aircraft obstruction checks. A
+second player can independently operate delivery. Escape opens the normal menu;
+station input is suppressed until resuming.
+
+Blender model: art/aircraft/north_star.blend. Rebuild with
+`blender --background --python art/aircraft/build.py`; Mk II fittings live in
+art/aircraft/mk2.py and export to assets/aircraft/north_star.glb.
+See [the annotated layout](art/aircraft/mk2/layout.svg) and
+[the implementation handoff](art/aircraft/mk2/HANDOFF.md) for authority rules,
+asset pivots, checks and exact two-account test steps.
+
+## Rounded North Star
+
+The cabin has fitted spruce carpet with a cranberry aisle runner and brass passage trim. The aircraft uses a chunky cargo body with rounded corners and a tapered nose, thick curled-tip wings, two high-mounted rear turbofans and one broad tail fin. The raised cockpit has wraparound glazing, fitted side consoles, a deep dashboard and a continuous carpeted floor. Click the BELLY GUN hatch to the right of the stairs with empty hands to enter the glass pod beneath the cockpit; Ctrl returns beside the stairs. The hatch swings open during the entry animation and closes afterward. Mouse aims, click fires, and holding right mouse lets you look around independently of the guns. The old upstairs well, courier bench and map are removed. Sources: `art/aircraft/rounded.py`, `art/aircraft/cockpit_finish.py`, `art/aircraft/rear_engines.py` and `art/aircraft/ball_turret.py`; rebuild through `art/aircraft/build.py`.
+
+The cargo console operates both launchers: **1** selects left, **2** selects right, **Space** releases, and **Q** exits. Its view follows the selected ballistic impact, showing a large green impact circle with a central crosshair. The rear aisle is continuous; load either rack from the inboard trays. The belly turret uses a smooth transparent glass sphere. Parked, taxi and landing height share the same clearance datum.
+
+Targeting uses the actual chute release point (0.45 seconds into its 0.8-second cycle), forecasting the aircraft with the same flight integrator used by the host. A reserved release uses its remaining opening time. Pilot control changes during the delay can change the landing point. `tests/release_prediction_smoke.tscn` checks real delayed drops on both racks under level flight, steering, climb and descent.

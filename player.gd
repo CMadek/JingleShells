@@ -1,5 +1,5 @@
 extends CharacterBody3D
-## World-space elf; World carries crew inside the cabin or dorsal station.
+## World-space elf; World carries crew inside the cabin or occupied belly station.
 ## Each peer controls its own elf and streams its state to everyone else.
 
 const Cargo := preload("res://cargo.gd")
@@ -76,6 +76,9 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority() or Game.menu_open:
 		return
+	if world.stations.station_for(peer_id) != "":
+		world.stations.handle_input(event)
+		return
 	if local_pilot and event.is_action_pressed("pilot_view"):
 		world.toggle_pilot_view()
 		return
@@ -95,7 +98,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.values.sensitivity * (-1.0 if Game.values.invert else 1.0), -1.5, 1.5)
 		head.rotation.x = pitch
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		if event.pressed and world.stations.aimed(peer_id) == "turret":
+			world.stations.request("turret")
+			get_viewport().set_input_as_handled()
+		elif event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and held_kind != Cargo.Kind.EMPTY and world.pilot_id != peer_id:
 			if event.pressed and charging_since < 0:
@@ -105,12 +111,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				charging_since = -1
 				world.cargo_action("throw")
 	elif event.is_action_pressed("interact"):
+		if world.queues.interact(peer_id): return
+		var station: String = world.stations.aimed(peer_id)
+		if station == "turret": return
+		if station == "delivery":
+			world.stations.request(station)
+			return
+		if world.emergency.aimed(head.global_transform):
+			world.emergency.request()
+			return
 		if world.pilot_id != peer_id and world.departure_bell.aimed(head.global_transform):
 			world.departure_bell.request_pull()
-			return
-		if world.pilot_id != peer_id and at_ladder() and world.aimed_pile(head.global_transform) == Cargo.Kind.EMPTY:
-			global_position = world.bomber.to_global(Vector3(.55, 2.19, -2.80) if world.bomber.to_local(global_position).y < 1.0 else Vector3(1.14,.03,-.83))
-			velocity = Vector3.ZERO
 			return
 		var item_id: int = world.aimed_loose(head.global_transform) if held_kind == Cargo.Kind.EMPTY else 0
 		if world.pilot_id != peer_id and world.access.aimed(head.global_transform) != "":
@@ -124,13 +135,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("drop_cargo"):
 		charging_since = -1
 		world.cargo_action("drop")
-
-
-func at_ladder() -> bool:
-	var local: Vector3 = world.bomber.to_local(global_position)
-	if local.y < 1.0:
-		return local.distance_to(Vector3(1.14,0,-1.16)) < .95
-	return local.y > 2 and absf(local.x) < 1.18 and absf(local.z+2.8) < 1.35
 
 
 func set_local_pilot(active: bool) -> void:
@@ -205,6 +209,10 @@ func _physics_process(delta: float) -> void:
 		head.rotation.x = net_pitch
 		return
 
+	if world.stations.station_for(peer_id) != "":
+		velocity = Vector3.ZERO
+		world.get_parent().sync_elf.rpc(position,rotation.y,head.rotation.x,crouched,true)
+		return
 	Crouch.update(self, capsule_node, not Game.menu_open and world.pilot_id != peer_id and Input.is_action_pressed("crouch"))
 	if world.pilot_id == peer_id:
 		velocity = Vector3.ZERO

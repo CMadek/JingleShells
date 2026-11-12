@@ -6,8 +6,6 @@ var opened := {"door": true, "hatch": false}
 var amount := {"door": 1.0, "hatch": 0.0}
 var panels := {}
 var cargo_shapes := {}
-var ramp: StaticBody3D
-var ramp_cargo: CollisionShape3D
 var hatch_leaves: Array[Node3D] = []
 
 func build(w: Node3D) -> void:
@@ -33,6 +31,7 @@ func build(w: Node3D) -> void:
 			body.get_child(0).visible = false
 			for side in [-1, 1]:
 				var hinge := Node3D.new()
+				hinge.visible = false
 				world.bomber.add_child(hinge)
 				hinge.position = Vector3(side, -.09, 3)
 				world._box(hinge,Vector3(.99,.18,2),Vector3(-side*.5,0,0),Color("715b39"))
@@ -42,21 +41,19 @@ func build(w: Node3D) -> void:
 	# Switches remain visible when the door is parked out of the opening.
 	for x in [-2.84,-3.22]:
 		world._box(world.bomber,Vector3(.06,.32,.24),Vector3(x,1.45,-3.75),Color("c2a157"))
-	world._label3d(world.bomber,"E • BOARDING DOOR",Vector3(-2.65,1.95,-3.75))
-	ramp = StaticBody3D.new()
-	ramp.collision_layer = 16
-	world.bomber.add_child(ramp)
-	ramp.position = Vector3(-6,-.91,-4.8)
-	ramp.rotation.z = atan2(1.82,6.0)
-	world._box(ramp,Vector3(6.3,.12,1.5),Vector3.ZERO,Color("54675e"),false,ramp)
-	if multiplayer.is_server():
-		ramp_cargo = ramp.get_child(1).duplicate()
-		ramp_cargo.transform = ramp.transform
-		world.moving_hull.add_child(ramp_cargo)
+	var sign := Label3D.new()
+	sign.text = "BOARDING\nE • OPEN / CLOSE"
+	sign.position = Vector3(-2.80,1.95,-3.55)
+	sign.rotation.y = PI/2
+	sign.font_size = 28
+	sign.pixel_size = .0025
+	sign.double_sided = false
+	world.bomber.add_child(sign)
 	step(0)
 
 func aimed(view: Transform3D) -> String:
 	for key in POINTS:
+		if key == "hatch": continue
 		var targets: Array[Vector3] = [POINTS[key]]
 		if key == "door":
 			targets.append_array([Vector3(-2.84,1.45,-3.75),Vector3(-3.22,1.45,-3.75),panels.door.position])
@@ -83,6 +80,7 @@ func request_remote(key: String) -> void:
 		handle(multiplayer.get_remote_sender_id(),key)
 
 func handle(id: int, key: String) -> void:
+	if key == "hatch": return
 	if not opened.has(key) or not world.players.has(id) or world.pilot_id == id:
 		return
 	if aimed(world.players[id].head.global_transform) != key:

@@ -99,9 +99,11 @@ func _ready() -> void:
 	camera.position = base + Vector3(14,12,18)
 	camera.look_at(base+Vector3(0,2,0))
 	camera.current = true
-	await RenderingServer.frame_post_draw
-	get_viewport().get_texture().get_image().save_png("user://delivery-destruction.png")
+	if DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("user://delivery-destruction.png")
 	print("PASS roof/wall/chimney/ground scoring, fast sweeps, duplicate protection, physical prediction, bomb destruction and snapshot replay")
-	main._return_to_menu()
+	main.queue_free()
 	await get_tree().process_frame
+	await get_tree().create_timer(.3).timeout
 	get_tree().quit()

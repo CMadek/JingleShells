@@ -16,10 +16,14 @@ func _ready() -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	check(w.speed == 0 and w.grounded, "Sleigh starts parked")
+	for i in 120: w._fly(1.0/60)
+	check(absf(w.bomber.position.y-w.Airfield.PARK.y)<.001,"Taxi physics preserves runner and turret clearance")
+	check(w.bomber.position.y-2.875>0,"Runner collision remains above runway")
+	check(w.stations.turret_pitch.global_position.y-1.09>.20,"Glass sphere clears the runway")
 	check(elf.global_position.distance_to(w.Airfield.SPAWN) < 3,"Spawn in depot")
 	w.set_physics_process(false)
 	elf.set_physics_process(false)
-	check(w.supply_points.size() == 18,"Nine individual supply shelves on each side")
+	check(w.supply_points.size() == 12,"Six supplies on each low rear rack")
 	var shelf_interact := InputEventAction.new()
 	shelf_interact.action = "interact"
 	shelf_interact.pressed = true
@@ -34,15 +38,29 @@ func _ready() -> void:
 		elf._unhandled_input(shelf_interact)
 		check(elf.held_kind == supply.kind,"Individual shelf item is collectible: " + str(supply.point))
 		w.set_held(1,0)
-	var outside: Vector3 = w.bomber.to_global(Vector3(4,1.4,0))
-	var through_wall := Transform3D(Basis.IDENTITY,outside).looking_at(w.bomber.to_global(Vector3(2.42,1.385,0)))
+	var outside: Vector3 = w.bomber.to_global(Vector3(4,1.4,8.65))
+	var through_wall := Transform3D(Basis.IDENTITY,outside).looking_at(w.bomber.to_global(Vector3(2.42,1.235,8.65)))
 	check(w.aimed_pile(through_wall) == 0,"Cannot collect shelf supplies through fuselage")
+	elf.global_position = w.bomber.to_global(Vector3(1.5,.05,11))
+	elf.rotation = Vector3.ZERO
+	elf.head.look_at(w.bomber.to_global(w.emergency.POINT))
+	elf._unhandled_input(shelf_interact)
+	check(w.emergency.gone,"E tears off emergency exit")
+	await get_tree().physics_frame
+	check(w.emergency.door.get_child(1).disabled and w.emergency.cargo_gate.disabled,"Emergency exit clears player and cargo gates")
+	check(is_instance_valid(w.emergency.debris),"Door flies away as visible debris")
+	w.emergency.set_gone(true,false)
+	await get_tree().process_frame
+	check(not is_instance_valid(w.emergency.debris),"Late-join state does not replay tear-off")
+	w.emergency.set_gone(false,false)
+	await get_tree().physics_frame
+	check(not w.emergency.gone and not w.emergency.door.get_child(1).disabled,"New level restores emergency door")
 	w.set_held(1,1)
 	elf.rotation = Vector3.ZERO
 	elf.pitch = 0
 	elf.head.rotation = Vector3.ZERO
 	elf.global_position = w.Airfield.SPAWN
-	for target in [Vector3(-24,0,840),Vector3(-22,0,835.2),Vector3(-9,0,835.2),Vector3(-1,1.82,835.2)]:
+	for target in [Vector3(-24,0,840),Vector3(-22,0,835.2),Vector3(-9,0,835.2),Vector3(-1,w.Airfield.PARK.y,835.2)]:
 		for i in range(360):
 			var offset: Vector3 = target-elf.global_position
 			offset.y = 0
@@ -55,25 +73,36 @@ func _ready() -> void:
 	check(w.aboard(elf.global_position),"Board through North Star doorway")
 	# The POC's original open aisle runs between the shelves and the rear deck.
 	elf.global_position = w.bomber.to_global(Vector3(0,.05,-1.8))
-	for target_z in [6.0,-1.8]:
-		for i in range(200):
-			var offset_z: float = target_z-w.bomber.to_local(elf.global_position).z
-			if absf(offset_z) < .15: break
-			elf.velocity = Vector3(0,-2,signf(offset_z)*4)
-			elf.move_and_slide()
-			await get_tree().physics_frame
-		check(absf(w.bomber.to_local(elf.global_position).z-target_z) < .2,"Original cabin aisle is clear in both directions")
-	check(not w.aboard(w.bomber.to_global(Vector3(0,0,9))),"Aircraft bounds match original POC length")
+	for route in [[Vector2(0,3.8),Vector2(0,5.3),Vector2(0,6.6),Vector2(0,11)],[Vector2(0,6.6),Vector2(0,5.3),Vector2(0,3.8),Vector2(0,-1.8)]]:
+		for target in route:
+			for i in range(240):
+				var point: Vector3 = w.bomber.to_local(elf.global_position)
+				var offset: Vector2 = target-Vector2(point.x,point.z)
+				if offset.length()<.12: break
+				var direction := offset.normalized()
+				elf.velocity = Vector3(direction.x*4,-2,direction.y*4)
+				elf.move_and_slide()
+				await get_tree().physics_frame
+			var point: Vector3 = w.bomber.to_local(elf.global_position)
+			check(Vector2(point.x,point.z).distance_to(target)<.2,"Straight cargo route to rear room: "+str(target))
+	check(w.aboard(w.bomber.to_global(Vector3(0,0,11))),"Rear room carries crew")
+	for rack in 2:
+		elf.global_position = w.bomber.to_global(Vector3(0,.05,6.3))
+		w.set_held(1,1)
+		elf.head.look_at(w.bomber.to_global(w.queues.loader(rack)))
+		elf._unhandled_input(shelf_interact)
+		check(elf.held_kind == 0 and w.queues.queues[rack].size() == 1,"Load either rack with E from the clear rear aisle")
+	w.queues.reset()
 	# Shelf boards physically support released cargo as well as blocking players.
 	w.set_held(1,1)
 	elf.global_position = w.bomber.to_global(Vector3(0,.05,0))
 	w._handle_cargo(1,"drop",0,0,0)
 	var shelf_item: int = w.next_item-1
-	w.loose[shelf_item].global_position = w.bomber.to_global(Vector3(2.42,1.55,0))
+	w.loose[shelf_item].global_position = w.bomber.to_global(Vector3(2.42,1.45,8.65))
 	w.loose[shelf_item].linear_velocity = Vector3.ZERO
 	for i in range(60): await get_tree().physics_frame
 	var shelf_height: float = w.bomber.to_local(w.loose[shelf_item].global_position).y
-	check(shelf_height > 1.3 and shelf_height < 1.5,"Loose cargo rests on middle shelf collision")
+	check(shelf_height > 1.15 and shelf_height < 1.35,"Loose cargo rests on middle shelf collision")
 	w.remove_loose(shelf_item)
 	w.set_held(1,1)
 	elf.global_position = w.bomber.to_global(Vector3(0,.05,0))
@@ -105,26 +134,14 @@ func _ready() -> void:
 	w.previous_plane = w.bomber.transform
 	w.moving_hull.transform = w.bomber.transform
 	elf.global_position = w.Airfield.SPAWN
-	w.access.set_state("hatch",true,0)
-	w.access.step(1.2)
-	check(w.access.panels.hatch.get_child(1).disabled,"Open hatch has real collision opening")
-	check(is_equal_approx(w.access.hatch_leaves[0].rotation.z,-PI/2) and is_equal_approx(w.access.hatch_leaves[1].rotation.z,PI/2),"Bomber hatch opens downwards from centre on outer hinges")
-	# Drop real cargo through the open bay, including the host physics gate.
+	# Mk II guards the old delivery opening with a continuous floor.
 	elf.global_position = w.bomber.to_global(Vector3(0,.05,4.1))
 	w.set_held(1,1)
 	w._handle_cargo(1,"drop",0,-1.0,0)
 	var dropped_id: int = w.next_item-1
 	for i in range(70): await get_tree().physics_frame
-	check(w.loose.has(dropped_id) and w.loose[dropped_id].global_position.y < w.bomber.position.y-.5,"Cargo falls through the open bomber bay")
+	check(w.loose.has(dropped_id) and w.loose[dropped_id].global_position.y > w.bomber.position.y,"Cargo cannot fall through guarded delivery deck")
 	if w.loose.has(dropped_id): w.remove_loose(dropped_id)
-	elf.global_position = w.bomber.to_global(Vector3(0,0,3))
-	w.access.set_state("hatch",false,1)
-	w.access.step(.1)
-	check(w.access.opened.hatch,"Hatch reverses when occupied")
-	elf.global_position = w.Airfield.SPAWN
-	w.access.set_state("hatch",false,1)
-	w.access.step(1.2)
-	check(not w.access.panels.hatch.get_child(1).disabled,"Closed hatch supports cargo")
 	# Close the door using the player's actual E interaction, even after taxiing.
 	elf.global_position = w.bomber.to_global(Vector3(-1.7,0,-4.8))
 	elf.head.look_at(w.bomber.to_global(w.access.POINTS.door))
@@ -136,7 +153,7 @@ func _ready() -> void:
 	check(not w.access.opened.door,"E must close door from inside while taxiing")
 	w.access.step(1.2)
 	check(w.access.amount.door == 0,"Door finishes closing")
-	check(w.access.ramp.visible and w.access.ramp.scale == Vector3.ONE and not w.access.ramp.get_child(1).disabled and not w.access.ramp_cargo.disabled,"Closed door keeps full ramp and cargo collision deployed")
+	check(w.get_node("Airfield/BoardingSteps").get_parent() != w.bomber,"Boarding steps stay at the airfield")
 	w.grounded = false
 	w.speed = 35
 	elf._unhandled_input(interact)
@@ -156,7 +173,17 @@ func _ready() -> void:
 	w.access.set_state("hatch",false,0)
 	w.speed = 0
 	w.throttle = 0
-	elf.global_position = w.bomber.to_global(w.HELM_POS)
+	elf.global_position = w.bomber.to_global(Vector3(0,.05,-1.8))
+	for target in [Vector3(0,1.55,-5.8),w.HELM_POS]:
+		for i in 240:
+			var local: Vector3 = w.bomber.to_local(elf.global_position)
+			var offset := Vector2(target.x-local.x,target.z-local.z)
+			if offset.length()<.12: break
+			var direction := offset.normalized()
+			elf.velocity = Vector3(direction.x*3,-2,direction.y*3)
+			elf.move_and_slide()
+			await get_tree().physics_frame
+		check(w.bomber.to_local(elf.global_position).distance_to(target)<.25,"Walk up cockpit stairs without jumping")
 	elf.head.rotation = Vector3.ZERO
 	elf._unhandled_input(interact)
 	check(w.pilot_id == 1,"E must engage helm")
@@ -169,9 +196,10 @@ func _ready() -> void:
 			distance = w.Airfield.PARK.z-w.bomber.position.z
 			break
 	check(not w.grounded and distance < 300,"Takeoff fits runway")
+	check(w.get_node("Airfield/BoardingSteps").global_position == Vector3.ZERO,"Boarding stairs do not travel with aircraft")
 	check(w.access.opened.door and w.access.amount.door == 1,"Takeoff leaves boarding door under crew control")
 	print("TAKEOFF: ",distance)
-	w.bomber.position = Vector3(0,1.85,500)
+	w.bomber.position = Vector3(0,w.MIN_ALTITUDE+.03,500)
 	w.pitch = -.1
 	w.in_climb = 0
 	w.in_throttle = -1
@@ -214,6 +242,12 @@ func _ready() -> void:
 		camera.position = w.bomber.to_global(Vector3(.1,1.6,1.5))
 		camera.look_at(w.bomber.to_global(Vector3(-2.42,1.4,0)))
 		await screenshot("individual-shelves")
+		camera.position = w.bomber.to_global(Vector3(0,2.05,6.5))
+		camera.look_at(w.bomber.to_global(Vector3(0,1.05,10.5)))
+		await screenshot("rear-room-concept")
+		w.emergency.set_gone(true,true)
+		await get_tree().create_timer(.15).timeout
+		await screenshot("rear-emergency-exit")
 		w.access.set_state("hatch",true,1)
 		w.access.step(0)
 		camera.position = w.bomber.to_global(Vector3(0,1.4,5.1))

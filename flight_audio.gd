@@ -44,7 +44,7 @@ func voice(stream: AudioStream, pos: Vector3, loop := false) -> AudioStreamPlaye
 
 func build(w: Node3D) -> void:
 	world = w
-	engine = voice(ENGINE,Vector3(0,-.5,0),true)
+	engine = voice(ENGINE,Vector3(0,4.35,9.1),true)
 	wind = voice(WIND,Vector3(0,1,0),true)
 	runners = voice(RUNNERS,Vector3(0,-1.5,1),true)
 	landing = voice(LANDING,Vector3(0,-1,0))

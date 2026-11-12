@@ -44,17 +44,8 @@ func _ready() -> void:
 	elf.rotation.y = 0
 	elf.set_physics_process(false)
 	world.set_physics_process(false)
-	# Both sleigh ladder directions must survive the character integration.
-	var interact := InputEventAction.new()
-	interact.action = "interact"
-	interact.pressed = true
-	elf.global_position = world.bomber.to_global(Vector3(1.14, .03, -.83))
-	assert(elf.at_ladder())
-	elf._unhandled_input(interact)
-	assert(world.bomber.to_local(elf.global_position).distance_to(Vector3(.55, 2.19, -2.80)) < .001)
-	assert(elf.at_ladder())
-	elf._unhandled_input(interact)
-	assert(world.bomber.to_local(elf.global_position).distance_to(Vector3(1.14, .03, -.83)) < .001)
+	# The obsolete dorsal station is removed; occupied belly access is tested in mk2_smoke.
+	assert(not elf.has_method("at_ladder"))
 	elf.global_position = world.bomber.to_global(Vector3(0, .05, 0))
 	elf.carry(1)
 	await get_tree().create_timer(.5).timeout

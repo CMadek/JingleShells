@@ -20,3 +20,8 @@ func update_readings(flight: Node3D, vertical_speed: float) -> void:
 	bank.rotation.z = -SWEEP * flight.roll / flight.MAX_ROLL
 	climb.rotation.z = -SWEEP * clampf(vertical_speed / 30.0, -1.0, 1.0)
 	wheel.rotation.z = -deg_to_rad(60.0) * flight.roll / flight.MAX_ROLL
+
+func _process(delta: float) -> void:
+	for child in get_children():
+		if child.name.begins_with("EngineFan"):
+			child.rotate_z(delta*(2+get_parent().get_parent().throttle*35))
