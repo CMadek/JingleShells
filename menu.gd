@@ -33,6 +33,10 @@ var dialog: ConfirmationDialog
 var display_deadline := 0
 var display_dialog: ConfirmationDialog
 var number_fields := {}
+var backdrop: Control
+var main_margin: MarginContainer
+var main_logo: TextureRect
+var scrim: ColorRect
 
 func _ready() -> void:
 	layer = 20
@@ -40,6 +44,7 @@ func _ready() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.theme = preload("res://ui_theme.gd").create()
 	add_child(root)
+	root.resized.connect(_layout_main)
 	show_page("main")
 
 func in_game() -> bool:
@@ -67,10 +72,10 @@ func _input(event: InputEvent) -> void:
 			show_page("pause" if in_game() else "main")
 
 func _process(_delta: float) -> void:
-	if page == "play" and root.visible and Game.steam_ready and not get_parent().busy():
+	if page in ["main", "play"] and root.visible:
 		for child in box.get_children():
-			if child is Button and child.text in ["Host Game", "Join Game"]:
-				child.disabled = false
+			if child is Button and child.text in ["Host Game", "Join Game", "Host a Game", "Join a Game"]:
+				child.disabled = not Game.steam_ready or get_parent().busy()
 	if is_instance_valid(display_dialog):
 		var seconds := ceili((display_deadline - Time.get_ticks_msec()) / 1000.0)
 		display_dialog.dialog_text = "Keep these display settings? Reverting in %d seconds." % seconds
@@ -101,52 +106,84 @@ func show_page(next: String, message: String = "") -> void:
 	_block_input()
 	root.show()
 	page = next
+	_sync_backdrop()
+	main_margin = null
+	main_logo = null
 	for child in root.get_children():
 		root.remove_child(child)
 		child.queue_free()
 	var background := ColorRect.new()
-	background.color = Color(0.025, 0.045, 0.10, 0.80 if in_game() else 1.0)
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background.color = Color(0.025, 0.045, 0.10, 0.80 if in_game() else .62)
+	if page == "main" and not in_game():
+		var material := ShaderMaterial.new()
+		material.shader = preload("res://assets/menu/readability.gdshader")
+		background.material = material
+	scrim = background
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(background)
-	if not in_game():
-		var snow := preload("res://menu_snow.gd").new()
-		snow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		root.add_child(snow)
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, 20)
 	root.add_child(margin)
 	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.follow_focus = true
 	margin.add_child(scroll)
 	var center := CenterContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.add_child(center)
 	var panel := PanelContainer.new()
 	if page == "main":
 		panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-	center.add_child(panel)
+		panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.add_child(panel)
+		main_margin = margin
+		center.free()
+	else:
+		scroll.add_child(center)
+		center.add_child(panel)
 	box = VBoxContainer.new()
-	box.custom_minimum_size.x = 380 if in_game() or page == "main" else 500
+	box.custom_minimum_size.x = 360 if page == "main" else (380 if in_game() else 500)
 	box.add_theme_constant_override("separation", 10)
 	panel.add_child(box)
 	if page == "main":
 		var logo := TextureRect.new()
+		logo.name = "GameLogo"
 		logo.texture = preload("res://assets/ui/jingle-shells-logo.png")
 		logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		logo.custom_minimum_size = Vector2(0, 245)
+		logo.custom_minimum_size = Vector2(0, 240)
 		logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_child(logo)
+		main_logo = logo
+		box.add_theme_constant_override("separation", 4)
 		var subtitle := label("A little crew. A long Christmas Eve.")
 		subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		subtitle.add_theme_font_size_override("font_size", 16)
-		button("Play", func(): show_page("play"))
-		common_buttons()
+		subtitle.add_theme_font_size_override("font_size", 14)
+		subtitle.add_theme_color_override("font_color", Color("c5c0a9"))
+		var space := Control.new()
+		space.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		space.custom_minimum_size.y = 22
+		space.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		box.add_child(space)
+		var host := button("Host a Game", func(): get_parent().host_game())
+		var join := button("Join a Game", func(): show_page("join"))
+		host.disabled = not Game.steam_ready or get_parent().busy()
+		join.disabled = host.disabled
+		host.tooltip_text = "Create a Steam lobby for your crew." if Game.steam_ready else "Start Steam to host an online game."
+		join.tooltip_text = "Join your crew using a Steam lobby ID." if Game.steam_ready else "Start Steam to join an online game."
+		button("How to Play", func(): show_page("help"))
+		button("Settings", func():
+			return_page = "main"
+			show_page("options"))
 		button("Credits", func(): show_page("credits"))
-		button("Exit", confirm_exit)
+		button("Quit to Desktop", confirm_exit)
+		if not Game.steam_ready:
+			var notice := label("Start Steam to host or join your crew.", 12)
+			notice.add_theme_color_override("font_color", Color("b5bdaf"))
 	elif page == "play":
 		label("PLAY", 28)
 		var host := button("Host Game", func(): get_parent().host_game())
@@ -199,7 +236,38 @@ func show_page(next: String, message: String = "") -> void:
 		label("By Synk Studios & Memceco\n\nA cooperative Christmas aviation game.\nBuilt with Godot. Multiplayer powered by GodotSteam / Steam.")
 		back()
 	status = label(message)
+	status.visible = not message.is_empty()
+	_layout_main()
 	_focus_first.call_deferred(menu_revision)
+
+func _sync_backdrop() -> void:
+	var animated: bool = Game.values.menu_motion and not "--static-menu" in OS.get_cmdline_user_args()
+	if is_instance_valid(backdrop) and (in_game() or backdrop.animated != animated):
+		release_backdrop()
+	if not in_game() and not is_instance_valid(backdrop):
+		backdrop = preload("res://menu_backdrop.gd").new()
+		backdrop.animated = animated
+		add_child(backdrop)
+		move_child(backdrop, 0)
+
+func release_backdrop() -> void:
+	if is_instance_valid(backdrop):
+		backdrop.stop()
+		remove_child(backdrop)
+		backdrop.queue_free()
+		backdrop = null
+
+func _layout_main() -> void:
+	if not is_instance_valid(main_margin) or not is_instance_valid(main_logo):
+		return
+	var width := clampf(root.size.x * .30, 300, 420)
+	box.custom_minimum_size.x = width
+	main_logo.custom_minimum_size.y = minf(width / 1.5, root.size.y * .34)
+	main_margin.add_theme_constant_override("margin_left", int(clampf(root.size.x * .035, 24, 68)))
+	main_margin.add_theme_constant_override("margin_top", int(clampf(root.size.y * .035, 16, 38)))
+	main_margin.add_theme_constant_override("margin_bottom", int(clampf(root.size.y * .04, 20, 44)))
+	if is_instance_valid(scrim) and scrim.material:
+		scrim.material.set_shader_parameter("rail_end", (width + main_margin.get_theme_constant("margin_left")) / maxf(root.size.x, 1))
 
 func _focus_first(revision: int) -> void:
 	if revision != menu_revision:
@@ -223,13 +291,24 @@ func button(text: String, callback: Callable) -> Button:
 	var node := Button.new()
 	node.text = text
 	if page == "main":
-		node.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+		node.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		node.add_theme_font_size_override("font_size", 25)
+		var font := SystemFont.new()
+		font.font_names = PackedStringArray(["Georgia", "DejaVu Serif", "serif"])
+		node.add_theme_font_override("font", font)
+		for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+			var style := StyleBoxFlat.new()
+			style.bg_color = Color(0.55,.16,.12,.12) if state in ["hover", "pressed"] else Color.TRANSPARENT
+			style.border_color = Color("d9b86f") if state == "focus" else Color.TRANSPARENT
+			style.set_border_width_all(2)
+			style.set_corner_radius_all(5)
+			style.content_margin_left = 14
+			style.content_margin_right = 14
+			style.content_margin_top = 5
+			style.content_margin_bottom = 5
+			node.add_theme_stylebox_override(state, style)
 	node.custom_minimum_size.y = 42
 	node.pressed.connect(callback)
-	if text in ["Exit", "Exit to Desktop", "End Session for Everyone", "Leave Game"]:
-		node.add_theme_color_override("font_color", Color("dca69b"))
-	elif text in ["Host Game", "Resume"]:
-		node.add_theme_color_override("font_color", Color("b8d4b7"))
 	box.add_child(node)
 	return node
 
@@ -247,10 +326,12 @@ func show_notice(message: String) -> void:
 		show_page("pause", message)
 	else:
 		status.text = message
+		status.visible = not message.is_empty()
 
 func resume_game() -> void:
 	if not in_game():
 		return
+	release_backdrop()
 	root.hide()
 	Game.menu_open = false
 	var world = get_parent().get_node("World")
@@ -335,6 +416,7 @@ func build_options(reset: bool = false) -> void:
 	choice("Window mode", "mode", ["Windowed", "Borderless", "Fullscreen"])
 	choice("Windowed resolution", "resolution", ["1280 × 720", "1600 × 900", "1920 × 1080"])
 	toggle("VSync", "vsync")
+	toggle("Animated main menu background", "menu_motion")
 	number("Frame limit (0 = unlimited)", "fps", 0, 360, 1)
 	number("Field of view", "fov", 60, 110, 1)
 	number("Master volume (%)", "volume", 0, 100, 1)

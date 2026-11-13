@@ -116,6 +116,7 @@ func _start_world() -> void:
 	if operation == "" or get_node_or_null("World"):
 		return
 	operation = ""
+	ui.release_backdrop()
 	var world: Node3D = preload("res://world.gd").new()
 	world.name = "World"
 	add_child(world)
