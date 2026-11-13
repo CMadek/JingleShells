@@ -35,13 +35,45 @@ for side,y in [(-1,4.8),(1,-11.0)]:
         origin=inverse @ Vector((side*7,y,z))
         direction=inverse.to_3x3() @ Vector((-side,0,0))
         assert not shell.ray_cast(origin,direction,distance=3.9)[0],"Fuselage blocks a door aperture"
-# Curved door reveals connect the flat leaf to the local shell without a box surround.
+# Boarding jambs follow the outside skin; the emergency exit retains its recess.
 for side,y in [(-1,4.8),(1,-11.0)]:
     for edge in (-.8,.8):
         rings=[]
         for i in range(17):
             z=2.28*i/16
             outer=airframe_surface_x(y+edge,z)+.015
-            rings.append([(side*x,y+edge+dy,z) for x,dy in [(3.06,-.055),(outer,-.055),(outer,.055),(3.06,.055)]])
+            inner=outer-.12 if side==-1 else 3.06
+            rings.append([(side*x,y+edge+dy,z) for x,dy in [(inner,-.055),(outer,-.055),(outer,.055),(inner,.055)]])
         loft("Curved door jamb",rings,red)
-    for z in (0,2.28):box("Door sill",(side*3.06,y,z),(.24,1.7,.09),gold,.018)
+    for z in (0,2.28):
+        if side==-1:
+            pts=[(-airframe_surface_x(y-.8+i*.1,z)-.01,y-.8+i*.1,z) for i in range(17)]
+            line("Exterior boarding sill",pts,.026,gold)
+        else:box("Door sill",(side*3.06,y,z),(.24,1.7,.09),gold,.018)
+
+# A curved, livery-matched leaf closes flush with the aircraft's outer skin.
+door_rig=bpy.data.objects["BoardingDoor"]
+ys=[4.02+i*1.56/8 for i in range(9)]
+zs=sorted(set([.025+i*2.23/20 for i in range(21)]+[.55,1.15]))
+ny,nz=len(ys),len(zs);count=ny*nz
+verts=[(-airframe_surface_x(y,z)-.012+inset,y,z) for inset in (0,.08) for y in ys for z in zs]
+faces=[];materials=[]
+for row in range(ny-1):
+    for col in range(nz-1):
+        a=row*nz+col;b=a+nz
+        faces.extend([(a,b,b+1,a+1),(a+count,a+1+count,b+1+count,b+count)])
+        materials.extend([1 if .55<(zs[col]+zs[col+1])/2<1.15 else 0,2])
+boundary=list(range(nz))+[r*nz+nz-1 for r in range(1,ny)]+list(range(count-2,count-nz-1,-1))+[r*nz for r in range(ny-2,0,-1)]
+for a,b in zip(boundary,boundary[1:]+boundary[:1]):
+    faces.append((a,a+count,b+count,b));materials.append(2)
+boarding_leaf=obj("Flush boarding door",verts,faces,red)
+boarding_leaf.data.materials.append(cream);boarding_leaf.data.materials.append(pine)
+for face,material in zip(boarding_leaf.data.polygons,materials):face.material_index=material;face.use_smooth=True
+bind(boarding_leaf,door_rig)
+outline=[(-airframe_surface_x(ys[i//nz],zs[i%nz])-.023,ys[i//nz],zs[i%nz]) for i in boundary]
+bind(line("Boarding door edge seal",outline+[outline[0]],.014,iron),door_rig)
+for z in (.40,1.90):rod("Boarding door outer hinge",(-4.72,5.63,z-.12),(-4.72,5.63,z+.12),.055,gold,24)
+for face_side in (-1,1):
+    x=-airframe_surface_x(4.24,1.20)+(-.085 if face_side==-1 else .12)
+    bind(box("Boarding latch backing",(x,4.24,1.20),(.035,.38,.16),iron,.025),door_rig)
+    bind(rod("Boarding lever handle",(x+face_side*.04,4.09,1.20),(x+face_side*.04,4.37,1.20),.026,gold,24),door_rig)

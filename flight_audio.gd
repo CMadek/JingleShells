@@ -93,15 +93,21 @@ func update_audio(delta: float) -> void:
 	var throttle: float = clampf(world.throttle,0,1)
 	var camera := get_viewport().get_camera_3d()
 	var inside: bool = camera != null and world.aboard(camera.global_position)
-	var cabin := .7 if inside else 1.0
-	mix_loop(engine,sqrt(throttle)*.38*cabin,.65+throttle*.7+speed*.15,delta)
-	var exposure: float = 1.0+world.access.amount.hatch*.35+world.access.amount.door*.2
-	mix_loop(wind,speed*speed*.26*exposure*(.2 if world.grounded else 1.0),.85+speed*.35,delta)
-	mix_loop(runners,speed*.3 if world.grounded else 0.0,.7+speed*.6,delta)
+	var cabin := .5 if inside else 1.0
+	mix_loop(engine,sqrt(throttle)*.17*cabin,.65+throttle*.7+speed*.15,delta)
+	# Only exterior door openings admit wind; the internal gun hatch does not.
+	var exposure: float = maxf(clampf(world.access.amount.door,0,1),1.0 if world.emergency.gone else 0.0)
+	if exposure > .001:
+		mix_loop(wind,speed*speed*.10*exposure*cabin*(.2 if world.grounded else 1.0),.85+speed*.35,delta)
+	else:
+		wind.stop()
+		gains[wind] = 0.0
+		wind.volume_db = -80
+	mix_loop(runners,speed*.14*cabin if world.grounded else 0.0,.7+speed*.6,delta)
 	var pos: Vector3 = world.bomber.global_position
 	var teleported := pos.distance_to(last_position) > 100
 	if not was_grounded and world.grounded and not teleported:
-		landing.volume_db = lerpf(-16,-5,clampf(absf(last_vertical_speed)/12,0,1))
+		landing.volume_db = lerpf(-20,-10,clampf(absf(last_vertical_speed)/12,0,1))
 		landing.play()
 		effect_played.emit("touchdown")
 	last_vertical_speed = (pos.y-last_position.y)/maxf(delta,.001)

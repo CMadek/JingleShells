@@ -16,13 +16,14 @@ windowless emergency-exit room remain accessible through the aft passage.
 - `art/aircraft/rounded.py`: rounded fuselage, wings, nacelles, oversized central fin and extended runner supports.
 - `art/aircraft/ball_turret.py`: cabin hatch, enclosed access passage and occupied gimballed pod. The dorsal assembly is removed.
 - `art/aircraft/cockpit_finish.py`: fitted side consoles, instrument panels, dashboard and pilot carpet.
+- `art/aircraft/collision.py`: fitted cabin and boarding-door collision resources, rebuilt alongside the GLB.
 
 Rebuild with `blender --background --python art/aircraft/build.py`, then import in
 Godot. Blender +Y is forward/+Z up; Godot −Z is forward/+Y up. Scale is metres.
 Named empty pivots survive export with `_rig` suffixes: BoardingDoor, EmergencyDoor, EngineFanL/R,
 Rack0/1Slot1–5, Rack0/1LoadingPoint, ChuteShutter0/1, ChuteOutlet0/1,
 DeliveryControls, VentralControls, GunnerHatch, VentralYaw, VentralPitch, SnowballMuzzle, GunnerEye, GunnerSeat.
-Static meshes batch by material; runtime collision uses simplified boxes.
+Static meshes batch by material. Cabin and boarding-door collision follow the generated shell and fitted floors; simplified boxes remain for the external wings, engines, runners and selected furnishings.
 
 Checked screenshots are saved in `art/aircraft/mk2/previews/`, including exterior
 three-quarter views, the cabin, mixed queues, retrieval, delivery targeting,
@@ -85,7 +86,7 @@ The two-process ENet harness is `tests/mk2_network.tscn`, with `-- --host` and
 `-- --client` on localhost port 28764. Connection did not complete in this execution
 environment; no successful live network validation is claimed.
 
-Before release, test with two Steam accounts on the same build (protocol 15):
+Before release, test with two Steam accounts on the same build (protocol 16):
 
 1. Host and join; load both racks with alternating types. Have both players load
    the fifth position together: only one succeeds and the loser keeps their item.
@@ -160,7 +161,7 @@ Validation for this revision: RELEASE PREDICTION CHECKS, MK II CHECKS, and AIRFI
 
 The shell uses rounded rectangular sections, broad shoulders, flatter sidewalls and a continuous roof instead of the swollen center and separate nose crown. The subsequent nose taper retains those cargo proportions and level livery bands. The raised pilot deck, stairs, rear engines, runners, separate cargo stores and glass belly gun retain their gameplay locations.
 
-The carpet, wing-root trims, bulkheads, window apertures and door reveals follow the new section profile. The stationary airfield stairs meet the wider body; a level collision bridge connects the threshold to the recessed door. Manifold booleans preserve the shell while cutting windows and doors, and build-time rays check that both doorways remain visually open.
+The carpet, wing-root trims, bulkheads, window apertures and door reveals follow the new section profile. The stationary airfield stairs meet the wider body at the exterior door threshold. Manifold booleans preserve the shell while cutting windows and doors, and build-time rays check that both doorways remain visually open.
 
 Validation: Blender export and floor/aperture assertions, Godot import, MK II CHECKS and AIRFIELD CHECKS passed. Interior, cockpit and exterior renders were inspected. Current previews: `previews/cargo-shape-studio.png`, `previews/cargo-shape-side.png`, `previews/cargo-shape-cabin.png` and `previews/cargo-shape-cockpit.png`. Live multiplayer remains unverified.
 
@@ -171,3 +172,13 @@ The nose now narrows and slopes forward from the raised cockpit, blending to ova
 The gunner hatch is in the vertical panel to the right of the stairs, at (1.9, .78, -5.48). Click enters with empty hands; Ctrl returns to (1.9, .05, -4.25). GunnerHatch swings inward during occupancy transitions. The local camera crouches through the enclosed passage before descending into the existing glass sphere, and cancels its transition cleanly on exit. Station state remains host-authoritative. Protocol 15 prevents older station layouts from joining.
 
 Validation includes actual click/Ctrl handling, carried-cargo refusal, menu suppression, hatch motion, safe cabin exit, blocked interaction through the cockpit floor, cargo queues, turret firing/free look, boarding, cockpit stair traversal, takeoff and landing. Current previews: `previews/tapered-nose-side.png`, `previews/tapered-nose-studio.png`, `previews/fitted-cockpit.png` and `previews/stair-gun-hatch.png`. Live two-account multiplayer testing remains outstanding.
+
+## Exterior boarding and fitted cabin collision
+
+The boarding leaf follows the outer fuselage, including its cream stripe, and swings outward from BoardingDoor at (-4.70, 1.14, -5.6). E operates it from either side; fixed switches remain reachable when open. Its fitted collision gate stays at the aperture and clears only when fully open. Closure checks cover the exterior threshold and still refuse/reverse when crew or cargo occupy it. Airfield stairs stay behind on departure.
+
+`collision.py` exports `cabin_collision.tres` and `boarding_door_collision.tres`. The old narrow wall, ceiling and floor boxes are replaced with fitted shell, floor, bulkhead and cockpit-cabinet collision. Windows remain solid. The aboard bounds span the full cabin so players next to the sidewalls travel with the aircraft. The turret validates its first projectile flight step against the fitted hull to prevent immediate self-hits.
+
+Engine gain is reduced from .38 to .17, cabin attenuation from .7 to .5, wind from .26 to .10 and runners from .30 to .14. Touchdown volume is also lower. The departure bell, interaction, UI prompt and obsolete bell test are removed. Protocol 16 requires matching builds.
+
+Validation: AIRFIELD, AUDIO, MK II and RELEASE PREDICTION checks passed. Actual walking reaches both visible sidewalls, crew ride correctly at the walls, the closed exterior door stops movement, E works inside/outside, the stair route remains open and the closure guard recognizes the new threshold. Checked previews: `previews/exterior-door-open.png`, `previews/exterior-door-closed.png`, `previews/exterior-door-inside.png`. Live two-account testing remains outstanding.

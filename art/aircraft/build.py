@@ -109,7 +109,7 @@ exec(compile((HERE/"rounded.py").read_text(),str(HERE/"rounded.py"),"exec"),glob
 def stages():
     hull()
     yield
-    for name in ["cabin","mk2","interior_details","access","export"]:
+    for name in ["cabin","mk2","interior_details","access","collision","export"]:
         path=HERE/(name+".py")
         while not path.is_file():
             yield

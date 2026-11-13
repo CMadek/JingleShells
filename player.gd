@@ -120,9 +120,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		if world.emergency.aimed(head.global_transform):
 			world.emergency.request()
 			return
-		if world.pilot_id != peer_id and world.departure_bell.aimed(head.global_transform):
-			world.departure_bell.request_pull()
-			return
 		var item_id: int = world.aimed_loose(head.global_transform) if held_kind == Cargo.Kind.EMPTY else 0
 		if world.pilot_id != peer_id and world.access.aimed(head.global_transform) != "":
 			world.access.request(world.access.aimed(head.global_transform))

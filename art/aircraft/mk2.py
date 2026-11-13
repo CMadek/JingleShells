@@ -15,7 +15,7 @@ def bind(o,parent):
     o.parent=parent
     o.matrix_parent_inverse=parent.matrix_world.inverted()
     return o
-rig("BoardingDoor",(-3.08,4.8,1.14))
+rig("BoardingDoor",(-4.70,5.6,1.14))
 rig("EmergencyDoor",(3.08,-11,1.14))
 # Solid continuous deck replaces the former open delivery hole.
 

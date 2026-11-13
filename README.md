@@ -14,13 +14,13 @@ Developed with Godot 4.7.2. Multiplayer requires GodotSteam and SteamMultiplayer
 4. Friends choose **Play → Join Game**, paste the lobby ID, and select Join, or accept a Steam friend invite while at the menu.
 5. Use separate Steam accounts on two machines for multiplayer testing. The former IP/UDP-port workflow is no longer used.
 
-The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-4`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-16`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
 
 ## Airfield preparation and takeoff
 
 Each session starts inside The Naughty List supply depot. The evil quartermaster is decorative; purchasing is a future feature and the current supplies are free. Follow the flight-line signs and board the North Star. A wide passage through the former rear bulkhead leads to a separate windowless cargo room. Six bombs sit on a low rack on the left and six presents on a low rack on the right, leaving the centre clear; collect them with E and drop them with G. The shop remains a placeholder.
 
-Aim at the boarding door or its brass switch and press E. The boarding door slides. Mk II replaces the open delivery hatch with guarded dual chutes and a continuous cabin floor. Boarding stairs stay at the airfield when the aircraft departs; there is no attached ramp. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots.
+Aim at the boarding door or its brass switch and press E from either side. The curved boarding door closes flush with the outside fuselage and swings outward, clear of the stairs. Mk II replaces the open delivery hatch with guarded dual chutes and a continuous cabin floor. Boarding stairs stay at the airfield when the aircraft departs; there is no attached ramp. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots. Fitted shell and floor collision lets crew walk up to the visible interior walls and remain aboard near them.
 
 At the helm: W raises throttle, S lowers it and applies ground brakes, A/D steers, Space raises the nose, and Shift lowers it. Reach 18 m/s and hold Space to take off. The boarding door stays under crew control: open, close, or reverse it with E at any speed, including in flight. Obstructions display a prompt. Touchdown levels the sleigh on its runners; hold S to stop. The original airborne flight model, animated instruments, V camera toggle, and chase orbit are retained. Flat-ground landing is arcade-style, without a crash/damage simulation. Low flight no longer causes the altitude clamp; out-of-world travel resets preparation.
 
@@ -32,19 +32,13 @@ Run tests/airfield_smoke.tscn with Godot for onboard present/bomb pickup, actual
 
 The editable North Star build now runs art/aircraft/access.py before export to cut the actual boarding doorway. Regenerate with Blender --background --python art/aircraft/build.py.
 
-## Departure bell
-
-A brass bell hangs in the rear cabin on the starboard wall. Aim at the pull ring and press E to ring it; the rope pulls down, the bell/clapper swing, and the crew hears a positional chime. The host validates distance, line of sight, and a 1.2-second cooldown. Old rings are not replayed to late joiners. The existing master volume/mute controls apply.
-
-The original synthesized sound is assets/audio/departure_bell.wav; regenerate it with node art/audio/build_bell.cjs. tests/bell_smoke.tscn checks E interaction, menu suppression, range/occlusion, cooldown, animation reset, and audio playback. Two-account audio synchronization still needs Steam testing.
-
 ## Flight and mechanical sounds
 
-The aircraft now has throttle-responsive engine pitch and volume, speed-dependent wind, runner rumble while taxiing, a touchdown thump, door/hatch motors and endpoint latches, and distinct bomb/present impacts. Sounds are positional and use the existing master volume/mute setting. Engines start quiet while parked; wind grows with airspeed and open access panels. Cabin listeners hear a softer engine mix than the exterior chase camera.
+The aircraft has throttle-responsive engine pitch and volume, speed-dependent wind, runner rumble while taxiing, a touchdown thump, door/hatch motors and endpoint latches, and distinct bomb/present impacts. Engine, wind, runner and touchdown levels use a quieter mix, with further attenuation inside the cabin. The departure bell has been removed. Sounds are positional and use the existing master volume/mute setting. Engines start quiet while parked. Wind plays only while the boarding door or rear emergency exit is open, scales with airspeed and the opening, and stops when both exterior doors are closed.
 
 Continuous sounds follow replicated flight and access state on each peer. Cargo sounds use the existing host-authorized impact RPC. One-shots use a bounded pool; resetting a level stops old effects, and leaving the world frees every audio source. Old landing/latch sounds are not replayed on initial join.
 
-All effects are original synthesis. Rebuild with node art/audio/build_flight.cjs (the bell uses build_bell.cjs). tests/audio_smoke.tscn covers throttle response, airborne/ground transitions, single touchdown events, door/hatch endpoints, cargo impacts, voice limits, volume routing, and reset/disconnect cleanup. Two-account Steam audio validation remains outstanding.
+All effects are original synthesis. Rebuild with node art/audio/build_flight.cjs. tests/audio_smoke.tscn covers throttle response, mix ceilings, airborne/ground transitions, single touchdown events, door/hatch endpoints, cargo impacts, voice limits, volume routing, and reset/disconnect cleanup. Two-account Steam audio validation remains outstanding.
 
 ## Menus and preferences
 

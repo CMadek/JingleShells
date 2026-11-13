@@ -23,6 +23,24 @@ func _ready() -> void:
 	check(elf.global_position.distance_to(w.Airfield.SPAWN) < 3,"Spawn in depot")
 	w.set_physics_process(false)
 	elf.set_physics_process(false)
+	check(w.bomber.get_node_or_null("DepartureBell") == null,"Departure bell is removed")
+	# Walk out past the old narrow collision cage to both visible cabin walls.
+	for side in [-1,1]:
+		elf.global_position = w.bomber.to_global(Vector3(0,.05,-1.3))
+		for tick in 100:
+			elf.velocity = Vector3(side*4,-2,0)
+			elf.move_and_slide()
+			await get_tree().physics_frame
+		var local_wall: Vector3 = w.bomber.to_local(elf.global_position)
+		check(absf(local_wall.x)>3.9 and absf(local_wall.x)<4.5,"Crew reaches the visible sidewall without leaving the hull")
+		check(absf(local_wall.y)<.12,"Fitted floor supports crew beside the walls")
+		check(w.aboard(elf.global_position),"Crew beside sidewalls remains aboard")
+		var wall_pose: Transform3D = w.bomber.transform
+		w.bomber.position.z -= 2
+		w.carry_crew(wall_pose)
+		check(w.bomber.to_local(elf.global_position).distance_to(local_wall)<.01,"Crew at the wall moves with the aircraft")
+		w.bomber.transform = wall_pose
+		w.moving_hull.transform = wall_pose
 	check(w.supply_points.size() == 12,"Six supplies on each low rear rack")
 	var shelf_interact := InputEventAction.new()
 	shelf_interact.action = "interact"
@@ -38,7 +56,7 @@ func _ready() -> void:
 		elf._unhandled_input(shelf_interact)
 		check(elf.held_kind == supply.kind,"Individual shelf item is collectible: " + str(supply.point))
 		w.set_held(1,0)
-	var outside: Vector3 = w.bomber.to_global(Vector3(4,1.4,8.65))
+	var outside: Vector3 = w.bomber.to_global(Vector3(5.5,1.4,8.65))
 	var through_wall := Transform3D(Basis.IDENTITY,outside).looking_at(w.bomber.to_global(Vector3(2.42,1.235,8.65)))
 	check(w.aimed_pile(through_wall) == 0,"Cannot collect shelf supplies through fuselage")
 	elf.global_position = w.bomber.to_global(Vector3(1.5,.05,11))
@@ -153,6 +171,27 @@ func _ready() -> void:
 	check(not w.access.opened.door,"E must close door from inside while taxiing")
 	w.access.step(1.2)
 	check(w.access.amount.door == 0,"Door finishes closing")
+	check(w.access.panels.door.position.x < -4.5 and is_zero_approx(w.access.door_visual.rotation.y),"Closed boarding door sits on the outer fuselage")
+	check(not w.access.gates.door.disabled,"Closed exterior door blocks the doorway")
+	elf.global_position = w.bomber.to_global(Vector3(-3.5,.05,-4.8))
+	for tick in 70:
+		elf.velocity = Vector3(-3,-2,0)
+		elf.move_and_slide()
+		await get_tree().physics_frame
+	var closed_stop: Vector3 = w.bomber.to_local(elf.global_position)
+	check(closed_stop.x < -3.9 and closed_stop.x > -4.45,"Closed curved door physically stops crew at the outer skin")
+	elf.global_position = w.bomber.to_global(Vector3(-6.2,-.6,-4.8))
+	elf.head.look_at(w.bomber.to_global(w.access.POINTS.door))
+	elf._unhandled_input(interact)
+	check(w.access.opened.door,"E opens boarding door from the outside")
+	w.access.step(1.2)
+	check(w.access.door_visual.rotation.y < -2.0 and w.access.gates.door.disabled,"Door swings outward and clears boarding route")
+	elf.global_position = w.bomber.to_global(Vector3(-4.4,0,-4.8))
+	check(w.access.blocked("door"),"Closure protects crew in the exterior threshold")
+	elf.global_position = w.bomber.to_global(Vector3(-1.7,0,-4.8))
+	elf.head.look_at(w.bomber.to_global(w.access.POINTS.door))
+	w.access.set_state("door",false,0)
+	w.access.step(0)
 	check(w.get_node("Airfield/BoardingSteps").get_parent() != w.bomber,"Boarding steps stay at the airfield")
 	w.grounded = false
 	w.speed = 35
@@ -227,6 +266,17 @@ func _ready() -> void:
 		camera.position = Vector3(-10,3.3,831)
 		camera.look_at(w.bomber.to_global(Vector3(-3,1.1,-4.8)))
 		await screenshot("boarding")
+		camera.position = w.bomber.to_global(Vector3(-8,2,-3.5))
+		camera.look_at(w.bomber.to_global(w.access.POINTS.door))
+		await screenshot("boarding-door-open")
+		w.access.set_state("door",false,0)
+		w.access.step(0)
+		await screenshot("boarding-door-closed")
+		camera.position = w.bomber.to_global(Vector3(-2.6,1.6,-3.6))
+		camera.look_at(w.bomber.to_global(w.access.POINTS.door))
+		await screenshot("boarding-door-inside")
+		w.access.set_state("door",true,1)
+		w.access.step(0)
 		camera.position = Vector3(-28,2,844)
 		camera.look_at(Vector3(-28,2,834))
 		await screenshot("shop")

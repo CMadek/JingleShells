@@ -1,31 +1,39 @@
 extends Node
-## Host-authorized sliding panels, with matching player/cargo collision gates.
-const POINTS := {"door": Vector3(-3,1,-4.8), "hatch": Vector3(0,0,3)}
+## Host-authorized exterior boarding door, with fixed player/cargo collision gates.
+const POINTS := {"door": Vector3(-4.62,1.14,-4.8), "hatch": Vector3(0,0,3)}
+const DOOR_HINGE := Vector3(-4.70,1.14,-5.6)
+const SWITCHES := [Vector3(-4.57,1.45,-3.75),Vector3(-4.82,1.45,-3.75)]
 var world: Node3D
 var opened := {"door": true, "hatch": false}
 var amount := {"door": 1.0, "hatch": 0.0}
 var panels := {}
+var gates := {}
+var door_visual: Node3D
 var cargo_shapes := {}
 var hatch_leaves: Array[Node3D] = []
 
 func build(w: Node3D) -> void:
 	world = w
+	door_visual = world.instruments.get_node("BoardingDoor_rig")
 	for key in POINTS:
 		var body := StaticBody3D.new()
 		body.collision_layer = 16
 		world.bomber.add_child(body)
-		var size := Vector3(.16,2.28,1.6) if key == "door" else Vector3(2,.18,2)
-		world._box(body,size,Vector3.ZERO,Color("712936") if key == "door" else Color("8d7140"),false,body)
+		var gate: CollisionShape3D
+		if key == "door":
+			gate = CollisionShape3D.new()
+			gate.shape = preload("res://assets/aircraft/boarding_door_collision.tres")
+			body.add_child(gate)
+		else:
+			world._box(body,Vector3(2,.18,2),Vector3.ZERO,Color("8d7140"),false,body)
+			gate = body.get_child(1)
+		gates[key] = gate
 		panels[key] = body
 		if multiplayer.is_server():
-			var shape: CollisionShape3D = body.get_child(1).duplicate()
+			var shape: CollisionShape3D = gate.duplicate()
 			world.moving_hull.add_child(shape)
 			cargo_shapes[key] = shape
-		if key == "door":
-			for z in [-5.63,-3.97]:
-				world._box(world.bomber,Vector3(.12,2.4,.07),Vector3(-3.14,1.15,z),Color("c2a157"))
-			world._box(world.bomber,Vector3(.12,.07,1.72),Vector3(-3.14,2.32,-4.8),Color("c2a157"))
-		else:
+		if key == "hatch":
 			# A stationary collision gate supports the deck while the two leaves
 			# rotate down from their outer hinges, separating along the centre seam.
 			body.get_child(0).visible = false
@@ -38,17 +46,17 @@ func build(w: Node3D) -> void:
 				for z in [-.75,.75]:
 					world._box(hinge,Vector3(.94,.03,.07),Vector3(-side*.5,.105,z),Color("b5a66b"))
 				hatch_leaves.append(hinge)
-	# Switches remain visible when the door is parked out of the opening.
-	for x in [-2.84,-3.22]:
-		world._box(world.bomber,Vector3(.06,.32,.24),Vector3(x,1.45,-3.75),Color("c2a157"))
-	var sign := Label3D.new()
-	sign.text = "BOARDING\nE • OPEN / CLOSE"
-	sign.position = Vector3(-2.80,1.95,-3.55)
-	sign.rotation.y = PI/2
-	sign.font_size = 28
-	sign.pixel_size = .0025
-	sign.double_sided = false
-	world.bomber.add_child(sign)
+	# Fixed handles stay reachable from inside and outside while the leaf swings.
+	for i in SWITCHES.size():
+		world._box(world.bomber,Vector3(.06,.32,.24),SWITCHES[i],Color("c2a157"))
+		var sign := Label3D.new()
+		sign.text = "BOARDING\nE • OPEN / CLOSE"
+		sign.position = SWITCHES[i]+Vector3(.04 if i == 0 else -.04,.48,.10)
+		sign.rotation.y = PI/2 if i == 0 else -PI/2
+		sign.font_size = 28
+		sign.pixel_size = .0025
+		sign.double_sided = false
+		world.bomber.add_child(sign)
 	step(0)
 
 func aimed(view: Transform3D) -> String:
@@ -56,7 +64,8 @@ func aimed(view: Transform3D) -> String:
 		if key == "hatch": continue
 		var targets: Array[Vector3] = [POINTS[key]]
 		if key == "door":
-			targets.append_array([Vector3(-2.84,1.45,-3.75),Vector3(-3.22,1.45,-3.75),panels.door.position])
+			targets.append_array(SWITCHES)
+			targets.append(world.bomber.to_local(door_visual.to_global(Vector3(.05,.06,1.4))))
 		for point in targets:
 			var target: Vector3 = world.bomber.to_global(point)
 			var offset := target-view.origin
@@ -93,7 +102,7 @@ func handle(id: int, key: String) -> void:
 	set_state.rpc(key,not opened[key],amount[key])
 
 func blocked(key: String) -> bool:
-	var area := AABB(Vector3(-3.55,-.4,-5.9),Vector3(1,3.1,2.2)) if key == "door" else AABB(Vector3(-1.25,-1.3,1.75),Vector3(2.5,3.3,2.5))
+	var area := AABB(Vector3(-5.15,-.4,-5.95),Vector3(1.10,3.1,2.3)) if key == "door" else AABB(Vector3(-1.25,-1.3,1.75),Vector3(2.5,3.3,2.5))
 	for elf in world.players.values():
 		if area.has_point(world.bomber.to_local(elf.global_position)):
 			return true
@@ -121,16 +130,16 @@ func step(delta: float) -> void:
 		if multiplayer.is_server() and not opened[key] and amount[key] > 0 and blocked(key):
 			set_state.rpc(key,true,amount[key])
 		amount[key] = move_toward(amount[key],1.0 if opened[key] else 0.0,delta/1.1)
-		var closed := Vector3(-3.08,1.14,-4.8) if key == "door" else Vector3(0,-.09,3)
-		var pos := closed + Vector3(0,0,-1.7)*float(amount[key]) if key == "door" else closed
+		var closed := DOOR_HINGE if key == "door" else Vector3(0,-.09,3)
 		var panel: StaticBody3D = panels[key]
-		panel.position = pos
-		# The collision gate stays stationary during the slide to avoid shoving cargo.
-		panel.get_child(1).position = closed-pos
+		panel.position = closed
+		# Keep the collision gate fixed so the animated leaf cannot shove the crew.
 		var disabled: bool = amount[key] > .999 if opened[key] else amount[key] > .001
-		panel.get_child(1).disabled = disabled
+		gates[key].disabled = disabled
 		if cargo_shapes.has(key):
 			cargo_shapes[key].position = closed
 			cargo_shapes[key].disabled = disabled
+	var t: float = amount.door
+	door_visual.rotation.y = -2.35*t*t*(3.0-2.0*t)
 	for i in hatch_leaves.size():
 		hatch_leaves[i].rotation.z = (-1 if i == 0 else 1) * float(amount.hatch) * PI / 2.0

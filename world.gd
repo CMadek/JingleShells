@@ -5,7 +5,6 @@ extends Node3D
 const Airfield := preload("res://airfield.gd")
 const Access := preload("res://aircraft_access.gd")
 var access: Node
-var departure_bell: Node3D
 var flight_audio: Node3D
 var grounded := true
 var phase := "PREPARATION"
@@ -60,7 +59,7 @@ var queues: Node3D
 var stations: Node3D
 var emergency: Node3D
 var supply_points: Array = []
-const CABIN_BOUNDS := AABB(Vector3(-2.9,-.5,-9.4),Vector3(5.8,7,21.4))
+const CABIN_BOUNDS := AABB(Vector3(-4.85,-.5,-12.2),Vector3(9.7,7,24.3))
 @export_range(1, 6) var pickup_range := 2.8
 @export_range(0.1, 4) var charge_seconds := 1.2
 @export var min_throw_speed := 2.5
@@ -301,50 +300,19 @@ func _build_bomber() -> void:
 	var hull := StaticBody3D.new()
 	hull.name = "Hull"
 	bomber.add_child(hull)
-	# A level threshold bridges the recessed door to the wider exterior shell.
+	var cabin_collision := CollisionShape3D.new()
+	cabin_collision.name = "FittedCabinCollision"
+	cabin_collision.shape = preload("res://assets/aircraft/cabin_collision.tres")
+	hull.add_child(cabin_collision)
+	# Level threshold meets the stationary airfield stairs at the exterior door.
 	_hull_box(hull,Vector3(1.4,.20,1.6),Vector3(-3.6,-.10,-4.8))
-	# Nose belly and lower cargo deck, with the gunner well beneath the pilot deck.
-	_hull_box(hull,Vector3(5.6,.20,1.35),Vector3(0,-1.05,-8.725))
-	_hull_box(hull,Vector3(5.6,.20,7.45),Vector3(0,-1.05,-2.825))
-	_hull_box(hull,Vector3(3.65,.20,1.5),Vector3(-.975,-1.05,-7.3))
-	_hull_box(hull,Vector3(5.6,.20,10.1),Vector3(0,-1.05,6.95))
 	for side in [-1,1]:
 		_hull_box(hull,Vector3(.30,.25,21),Vector3(side*2.06,-2.75,.5))
 		_hull_box(hull,Vector3(9.8,.65,3.7),Vector3(side*8.2,.45,4.3))
 		_hull_box(hull,Vector3(2.85,2.85,5.4),Vector3(side*5.45,4.35,9.1))
-	for height in [-.2,1.35]:
-		_hull_box(hull,Vector3(6.7,.4,1.35),Vector3(0,height,-8.725))
-		_hull_box(hull,Vector3(4.3,.4,1.5),Vector3(-1.2,height,-7.3))
-		_hull_box(hull,Vector3(.8,.4,1.5),Vector3(2.95,height,-7.3))
-	# Seal the old gunner opening on the pilot deck; access is below the stairs.
-	_hull_box(hull,Vector3(1.6,.4,1.5),Vector3(1.75,1.35,-7.3))
-	_hull_box(hull,Vector3(6,.4,18.55),Vector3(0,-.2,2.725))
-	_hull_box(hull,Vector3(6.7,.4,.95),Vector3(0,1.35,-6.075))
 	_walkway_wedge(hull,1.9,Vector3(0,0,-2.5),Vector3(0,1.55,-5.6))
 	# Closed access face prevents walking through the hatch; click starts boarding.
 	_hull_box(hull,Vector3(1.5,1.5,.12),Vector3(1.9,.75,-5.64))
-	for side in [-1,1]:
-		_hull_box(hull,Vector3(1.8,1.12,3.18),Vector3(side*2.32,2.11,-7.51))
-	_hull_box(hull,Vector3(6.0,1.2,.30),Vector3(0,2.15,-9.20))
-	for side in [-1, 1]:
-		_hull_box(hull, Vector3(2,.4,2), Vector3(side*2,-.2,3))
-		if side == 1:
-			_hull_box(hull, Vector3(.14,5.0,19.6), Vector3(3,2.1,.4))
-		else:
-			_hull_box(hull, Vector3(.14,5.0,3.8), Vector3(-3,2.1,-7.5))
-			_hull_box(hull, Vector3(.14,3.1,16), Vector3(-3,1.15,4))
-			_hull_box(hull, Vector3(.14,.8,1.6), Vector3(-3,2.68,-4.8))
-		_hull_box(hull, Vector3(1.9,.18,2.6), Vector3(side*2.20,4.85,-2.8))
-	_hull_box(hull, Vector3(.14,3.1,.2), Vector3(3,1.15,11.9))
-	_hull_box(hull, Vector3(.14,.8,1.6), Vector3(3,2.68,11))
-	for side in [-1,1]:
-		_hull_box(hull, Vector3(1.96,3.2,.15), Vector3(side*2.02,1.5,7))
-	_hull_box(hull, Vector3(2.08,.7,.15), Vector3(0,2.8,7))
-	_hull_box(hull, Vector3(6,3.2,.15), Vector3(0,1.5,12))
-	_hull_box(hull, Vector3(6,5.0,.15), Vector3(0,2.1,-9.4))
-	_hull_box(hull, Vector3(2.5,.18,2.6), Vector3(0,5.2,-2.8))
-	_hull_box(hull, Vector3(6,.18,2.9), Vector3(0,5.2,-5.55))
-	_hull_box(hull, Vector3(6,.18,13.5), Vector3(0,5.2,5.25))
 	_hull_box(hull, Vector3(2.49,1.1,.83), Vector3(0,2.10,-8.63))
 	supply_points = preload("res://cargo_shelves.gd").build(self,hull)
 	# Elves ride by parenting. Cargo needs a moving surface with physics velocity.
@@ -366,10 +334,6 @@ func _build_bomber() -> void:
 	emergency.name = "EmergencyExit"
 	add_child(emergency)
 	emergency.build(self)
-	departure_bell = preload("res://departure_bell.gd").new()
-	departure_bell.name = "DepartureBell"
-	bomber.add_child(departure_bell)
-	departure_bell.build(self)
 	flight_audio = preload("res://flight_audio.gd").new()
 	flight_audio.name = "FlightAudio"
 	bomber.add_child(flight_audio)
@@ -1030,8 +994,6 @@ func _process(delta: float) -> void:
 	txt += "\nGreen chimney = nice, red chimney = naughty. Ctrl crouches. Esc opens the menu."
 	var local_elf = players.get(me)
 	if local_elf:
-		if departure_bell.aimed(local_elf.head.global_transform):
-			txt += "\nE — Pull departure bell"
 		var queue_prompt: String = queues.prompt(me)
 		if queue_prompt != "": txt += "\n"+queue_prompt
 		var station_target: String = stations.aimed(me) if queue_prompt == "" else ""

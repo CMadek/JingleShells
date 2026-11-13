@@ -18,7 +18,7 @@ Presents: nice house +10, precise nice chimney +15 total; naughty house −5. Bo
 WALKING
 WASD move • Space jump • Ctrl crouch • E interact
 Hold/release left mouse to throw held cargo • G drop
-E operates the boarding door and departure bell. The rear emergency exit tears off when released and restores next level.
+E operates the outside boarding door from either side. The rear emergency exit tears off when released and restores next level.
 
 Escape opens the menu. Online play continues; your gameplay input is suppressed. Q leaves the delivery console; Ctrl leaves the turret."""
 var root: Control

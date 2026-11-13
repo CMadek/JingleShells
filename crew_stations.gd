@@ -31,6 +31,7 @@ var look_offset := Vector2.ZERO
 var hatch: Node3D
 var hatch_time := 0.0
 const GUNNER_VIEW := Vector3(0,.22,-.14)
+const SNOWBALL_SPEED := 42.0
 
 func build(w: Node3D) -> void:
 	world = w
@@ -238,12 +239,14 @@ func fire(id: int, y: float, p: float) -> bool:
 	turret_yaw.rotation.y = old_y
 	turret_pitch.rotation.x = old_p
 	if not hit.is_empty(): return false
-	# Check one projectile length beyond the muzzle as well.
-	if not world.Trajectory.sweep(get_world_3d().direct_space_state,shape,Transform3D(basis,end),-basis.z*.3,1|16).is_empty(): return false
+	# The fitted belly can sit just beyond the muzzle. Validate the first flight
+	# step too, so a shot that would immediately strike the aircraft is refused.
+	var clearance: float = maxf(.3,SNOWBALL_SPEED*world.physics_delta+shape.radius)
+	if not world.Trajectory.sweep(get_world_3d().direct_space_state,shape,Transform3D(basis,end),-basis.z*clearance,1|16).is_empty(): return false
 	last_fire = Time.get_ticks_msec()
 	var local: Vector3 = world.bomber.to_local(end)
 	var inherited: Vector3 = (end-world.previous_plane*local)/maxf(world.physics_delta,.001)
-	projectiles.launch(end,-basis.z*42+inherited)
+	projectiles.launch(end,-basis.z*SNOWBALL_SPEED+inherited)
 	orientation.rpc(yaw,pitch)
 	return true
 

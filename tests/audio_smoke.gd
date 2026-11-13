@@ -32,11 +32,12 @@ func _ready() -> void:
 	w.speed = 30
 	for i in range(120): audio.update_audio(1.0/60)
 	check(audio.engine.playing and audio.engine.pitch_scale > low_pitch and audio.gains[audio.engine] > low_gain,"Engine spools with throttle")
+	check(audio.gains[audio.engine] < .18 and audio.gains[audio.runners] < .15,"Reduced engine and runner levels stay below the quieter mix ceilings")
 	check(audio.runners.playing,"Taxiing produces runner rumble")
 	w.grounded = false
 	w.bomber.position.y = 20
 	for i in range(120): audio.update_audio(1.0/60)
-	check(audio.wind.playing and audio.gains[audio.wind] > .05,"Airspeed produces wind")
+	check(audio.wind.playing and audio.gains[audio.wind] > .01 and audio.gains[audio.wind] < .16,"Airspeed produces quieter wind")
 	check(not audio.runners.playing,"Runner rumble fades after takeoff")
 	w.bomber.position.y = w.MIN_ALTITUDE
 	w.grounded = true
@@ -54,6 +55,31 @@ func _ready() -> void:
 	w.access.step(1.2)
 	audio.update_audio(.1)
 	check(events.get("door_latch",0) == 1,"Boarding door latches at endpoint")
+	# Wind requires an actual exterior opening, even at maximum airspeed.
+	w.grounded = false
+	w.bomber.position.y = 30
+	w.speed = w.MAX_SPEED
+	w.access.set_state("door",false,0)
+	w.emergency.set_gone(false,false)
+	audio.update_audio(.1)
+	check(not audio.wind.playing and is_zero_approx(audio.gains[audio.wind]),"Closed exterior doors silence wind even with the legacy hatch open")
+	w.access.set_state("door",true,.25)
+	for i in 120: audio.update_audio(1.0/60)
+	var partial_wind: float = audio.gains[audio.wind]
+	check(audio.wind.playing and partial_wind > .001,"Partially open boarding door admits wind")
+	w.access.set_state("door",true,1)
+	for i in 120: audio.update_audio(1.0/60)
+	check(audio.gains[audio.wind] > partial_wind*2,"Wind increases as the boarding door opens")
+	w.emergency.set_gone(true,false)
+	w.access.set_state("door",false,0)
+	audio.update_audio(.1)
+	check(audio.wind.playing,"Open emergency exit keeps wind playing when boarding door closes")
+	w.emergency.set_gone(false,false)
+	audio.update_audio(.1)
+	check(not audio.wind.playing and is_zero_approx(audio.gains[audio.wind]),"Closing both exterior doors stops wind without a lingering loop")
+	w.emergency.set_gone(true,false)
+	for i in 120: audio.update_audio(1.0/60)
+	check(audio.wind.playing and audio.gains[audio.wind] > .001,"Emergency exit alone starts wind from silence")
 	w.landing_burst(Vector3(0,0,-900),w.Cargo.Kind.BOMB)
 	w.landing_burst(Vector3(1,0,-900),w.Cargo.Kind.PRESENT)
 	check(events.get("bomb",0) == 1 and events.get("present",0) == 1,"Existing replicated cargo effects play distinct sounds")
