@@ -1,12 +1,12 @@
 # Flight crew elf assets
 
-Original Blender-authored stylized Christmas flight crew, with pointed ears, folded cap and goggles, scarf, jacket, mittens, and boots. Character presentation is independent of gameplay authority.
+Original Blender-authored stylized Christmas flight crew, with pointed ears, folded cap and round goggles, scarf, puffy jacket, mittens, and chunky boots. Character presentation is independent of gameplay authority.
 
 ## Build
 
-Run Blender 5.2 in background mode with `--python art/elf/build.py`. This writes the editable `flight_elf.blend` and `first_person_arms.blend` sources and both GLB assets under `assets/elf`. Run `--python art/elf/render.py` to regenerate front, side, and back studio renders. Godot imports the GLBs; Blender sources are excluded from Godot's importer with `.gdignore`.
+Run Blender 5.2 in background mode with `--python art/elf/build.py`. This writes the editable `flight_elf.blend` and `first_person_arms.blend` sources and both GLB assets under `assets/elf`. Run `--python art/elf/render.py` to regenerate front, side, back, three-quarter, carry, and crouch studio renders. Godot imports the GLBs; Blender sources are excluded from Godot's importer with `.gdignore`.
 
-The body has a shared armature with 12 bones including CargoSocket, rigid garment weights, and 15 clips: idle, walk, jump, land, crouch idle/walk, crouched carry idle/walk, pickup, carry idle/walk, charge, throw, drop, and helm. Pose transitions blend through AnimationPlayer. The first-person sleeve/mitten mesh uses a separate lightweight procedural reach/charge/sway presentation. Three coat colors are chosen deterministically from peer ID and applied to body and sleeves. No per-frame bone replication is used.
+The body has the 12 gameplay bones plus a Scarf bone, blended garment weights, and 15 clips: idle, walk, jump, land, crouch idle/walk, crouched carry idle/walk, pickup, carry idle/walk, charge, throw, drop, and helm. The anchored scarf gently sways outward and sideways in walking clips, with a smaller idle motion. Remote crew and external cameras see it; the separate first-person arms do not contain it. No additional per-frame bone replication is used. Three coat colors are chosen deterministically from peer ID and applied to body and sleeves.
 
 ## Controls and behavior
 
@@ -14,10 +14,24 @@ Hold Left Ctrl to crouch. Crouch uses a unique capsule per player, slows movemen
 
 Host-approved inventory results control held models. Charge/cancel/release poses are sent by the host. Remote held objects use a bone attachment; local objects and hands share one view attachment. Hands and cargo are hidden at the helm. Character bodies are hidden only for their own first-person camera. The crouch and grounded flags accompany existing player motion; late joiners receive reliable posture and current inventory/charge snapshots.
 
-Protocol is `jingle-bells-4`: peers must use matching builds because player poses now use world coordinates and aircraft access state is replicated.
+The current protocol is `jingle-bells-16`; this legacy internal identifier is independent of the corrected Jingle Shells branding. Use matching builds for multiplayer.
 
 ## Checks and limits
 
 Run `godot --path . --rendering-method gl_compatibility res://tests/elf_smoke.tscn` with disposable user data. It tests crouch, overhead obstruction, releasing crouch through menus, independent capsules, and remote inventory/charge presentation, and writes in-game screenshots here. `tests/menu_smoke.tscn` checks menu/settings and mouse input integration.
 
 The North Star sleigh, occupied belly turret, cockpit/chase cameras, and airfield preparation loop are integrated. Local smoke checks cover turret entry and exit, body/hand visibility across camera switches, crouch clearance, and boarding. Two-account Steam play remains required before release. Generated poses and mitten contact are stylized; there is no finger IK or wall avoidance for the first-person mesh.
+
+## Cozy courier refinement
+
+`character.py` preserves the original whimsical proportions: a rounded head, button nose, wide eyes, scarf, round goggles and plush sleeves. `refine.py` joins intersecting forms before skinning. The neck/chin/nose join the head, sleeves join the coat, and mitten thumbs form continuous surfaces. The boots now have shaped uppers, thin open cuffs, and fitted soles, replacing the overlapping toe/ankle bulbs and oval bases. Socks fit inside the cuffs. Blended shoulder, elbow and knee weights preserve the existing poses.
+
+The ears are curved leaf meshes with recessed rosy bowls. Cheek blush is painted into the head's complexion attribute; separate cheek discs are removed. `surface_paint.py` packs UVs and generates color atlases for the coat, hat, scarf, socks, boots, gloves and badge. Stitch lines, stripes, laces and glove marks are painted on the actual garment surfaces. Legacy line guides are removed before export. Restrained fabric grain is baked into those maps.
+
+The `.blend` preserves editable garments and fittings. The GLB batches pieces into 11 material meshes, with named bone weights, generated LODs, and all 15 clips. Source atlases under `art/elf/textures` are packed into Blender and GLB; Godot extracts the game copies. The two tint masks under `assets/elf/textures` are also generated by the build. `coat_palette.gdshader` uses the masks to change crew colors without tinting the cream/gold decorations. First-person gloves have their own atlas. `import_character.gd` enables the linear complexion colors during every import. No special LOD bias is needed for painted detail.
+
+Run `godot --headless --path . --script tests/elf_asset_smoke.gd` to check the imported skeleton, clips, complexion, normalized blended garment weights, and customizable first-person sleeves. The existing elf smoke test covers crouch clearance, carrying and remote presentation. Studio renders include carry and crouch deformation checks. `tests/polish_previews.tscn` captures all three crew colors, an actual remote cargo attachment, and local first-person carrying in the cabin, followed by an eight-character rendering sample. This is a local rendering check, not a network or minimum-hardware benchmark.
+
+Pass `-- --visual-only` after the preview scene path to skip the performance sample. The rounded-model follow-up was measured while the GPU was already at 100% utilization before launching Godot. Frame rates varied even with the crew hidden, so those measurements cannot establish a reliable model-performance comparison.
+
+`tests/orientation_smoke.tscn` exercises repeated bank/climb/descent/heading changes, local and remote root alignment, interpolated remote state, retained crouch bones, turret seating, exit, helm/delivery and level reset. The world-space character root stays upright while the animation skeleton can still crouch and pose. Live two-account verification is still required.

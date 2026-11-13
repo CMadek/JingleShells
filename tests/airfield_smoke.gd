@@ -229,7 +229,9 @@ func _ready() -> void:
 	w.send_pilot_input(0,1,1)
 	var distance := 0.0
 	for i in range(600):
+		var old_plane: Transform3D = w.bomber.transform
 		w._fly(1.0/60)
+		w.carry_crew(old_plane)
 		w.access.step(1.0/60)
 		if not w.grounded:
 			distance = w.Airfield.PARK.z-w.bomber.position.z
@@ -242,12 +244,18 @@ func _ready() -> void:
 	w.pitch = -.1
 	w.in_climb = 0
 	w.in_throttle = -1
+	elf.global_position = w.bomber.to_global(w.HELM_POS)
+	var landing_pose: Transform3D = w.bomber.transform
 	w._fly(.1)
+	w.carry_crew(landing_pose)
 	check(w.grounded and w.bomber.position.z < 501,"Touchdown preserves location")
 	w.speed = 45
 	w.throttle = 1
 	var start_z: float = w.bomber.position.z
-	for i in range(600): w._fly(1.0/60)
+	for i in range(600):
+		var old_plane: Transform3D = w.bomber.transform
+		w._fly(1.0/60)
+		w.carry_crew(old_plane)
 	check(w.speed == 0 and start_z-w.bomber.position.z < 300,"Maximum-speed landing roll fits runway")
 	print("MAX SPEED STOP: ",start_z-w.bomber.position.z)
 	w.begin_level()

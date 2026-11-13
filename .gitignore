@@ -5,3 +5,6 @@
 .test-data/
 
 /art/elf/*.blend1
+__pycache__/
+# GodotSteam's Windows hot-reload/safe-save copies are local importer artifacts.
+/addons/godotsteam/win64/~*.TMP

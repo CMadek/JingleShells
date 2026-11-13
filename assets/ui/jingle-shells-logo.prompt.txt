@@ -1,0 +1,8 @@
+Generated with the built-in image-generation tool, then checked in the Godot menu.
+Edit target: the existing jingle-bells-logo.png. Final asset: jingle-shells-logo.png.
+
+Initial prompt:
+Edit this transparent game logo for a cozy handmade Christmas aviation game. Replace the words with exactly "Jingle Shells" on two lines: "Jingle" above "Shells". Readable broad warm ivory slab-serif hand-lettering, restrained aged brass edging, cranberry and deep spruce accents. Keep the charming vintage Christmas-card print character, clean alpha silhouette with no noisy fringe. Above the wordmark use a small chunky rounded cargo plane silhouette in spruce green, raised cockpit, two little rear shoulder engines and curved sleigh runners, carrying one cranberry wrapped present. Small brass North Star emblem below instead of a bell. Generous transparent margins. No additional words, no tagline, no background, no shadow rectangle, no mockup. Preserve transparent background. Asset intended for a 380px-wide main menu, text must be very clear.
+
+Final refinement:
+Refine only the alpha edge and background of this Jingle Shells logo. Keep the same exact lettering, plane, present, colors, layout, runners and star. Remove ALL broad hazy glow, gradients, fog, smoke and colored light behind and between the elements. It must be a clean cutout on truly transparent pixels. The transparent empty areas between the letters and around all subjects must be fully clear. Flat vintage printed logo with crisp alpha edge, no ambient glow or shadows. Exact wording remains "Jingle Shells".

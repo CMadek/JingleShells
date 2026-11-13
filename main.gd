@@ -72,7 +72,7 @@ func _on_lobby_created(result: int, id: int) -> void:
 		return
 	lobby_id = id
 	Game.steam.setLobbyData(id, "protocol", PROTOCOL)
-	Game.steam.setLobbyData(id, "name", "Jingle Bells")
+	Game.steam.setLobbyData(id, "name", "Jingle Shells")
 	var peer = ClassDB.instantiate("SteamMultiplayerPeer")
 	var error: int = peer.create_host(0)
 	if error != OK:
