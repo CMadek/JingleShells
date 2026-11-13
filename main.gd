@@ -1,8 +1,9 @@
 extends Node
 
 const MAX_ELVES := 8
-const PROTOCOL := "jingle-bells-2"
+const PROTOCOL := "jingle-bells-16"
 var ui: CanvasLayer
+var menu_music: AudioStreamPlayer
 var lobby_id := 0
 var target_lobby := 0
 var operation := ""
@@ -19,6 +20,8 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(_start_world)
 	multiplayer.connection_failed.connect(func(): _return_to_menu("Connection failed. Check Steam and try again."))
 	multiplayer.server_disconnected.connect(func(): _return_to_menu("The host left the game."))
+	menu_music = preload("res://menu_music.gd").new()
+	add_child(menu_music)
 	ui = preload("res://menu.gd").new()
 	add_child(ui)
 
@@ -116,6 +119,7 @@ func _start_world() -> void:
 	var world: Node3D = preload("res://world.gd").new()
 	world.name = "World"
 	add_child(world)
+	menu_music.set_active(false)
 	ui.resume_game()
 
 func _return_to_menu(message: String = "") -> void:
@@ -133,6 +137,7 @@ func _return_to_menu(message: String = "") -> void:
 	if lobby_id != 0 and Game.steam_ready:
 		Game.steam.leaveLobby(lobby_id)
 	lobby_id = 0
+	menu_music.set_active(true)
 	ui.show_page("main", message)
 
 func quit_game() -> void:

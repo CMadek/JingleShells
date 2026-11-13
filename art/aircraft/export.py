@@ -25,9 +25,17 @@ def export_batch(name,collections,origin=Vector((0,0,0))):
         parent=o.parent
         local=parent.matrix_world.inverted() if parent else Matrix.Translation(-origin)
         data.transform(local @ o.matrix_world)
-        key=(parent,data.materials[0])
-        if key not in buckets: buckets[key]=bmesh.new()
-        buckets[key].from_mesh(data)
+        for index,material in enumerate(data.materials):
+            part=bmesh.new(); part.from_mesh(data)
+            bmesh.ops.delete(part,geom=[f for f in part.faces if f.material_index!=index],context='FACES')
+            if part.faces:
+                for f in part.faces:f.material_index=0
+                subset=bpy.data.meshes.new("Material subset"); part.to_mesh(subset)
+                key=(parent,material)
+                if key not in buckets:buckets[key]=bmesh.new()
+                buckets[key].from_mesh(subset)
+                bpy.data.meshes.remove(subset)
+            part.free()
         bpy.data.meshes.remove(data)
     for (parent,m),bm in buckets.items():
         data=bpy.data.meshes.new(m.name)
@@ -42,5 +50,4 @@ def export_batch(name,collections,origin=Vector((0,0,0))):
     for o in copies:o.select_set(True)
     bpy.ops.export_scene.gltf(filepath=str(OUT/(name+".glb")),use_selection=True,use_active_scene=True)
     for o in reversed(copies):bpy.data.objects.remove(o,do_unlink=True)
-export_batch("north_star",[c for c in scene.collection.children if c!=coll])
-export_batch("dorsal_station",[coll],Vector((0,2.8,3.18)))
+export_batch("north_star",list(scene.collection.children))

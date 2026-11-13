@@ -1,5 +1,5 @@
 extends CharacterBody3D
-## One elf. Child of the Bomber node, so it rides along with the ship.
+## World-space elf; World carries crew inside the cabin or occupied belly station.
 ## Each peer controls its own elf and streams its state to everyone else.
 
 const Cargo := preload("res://cargo.gd")
@@ -39,6 +39,7 @@ var net_pitch := 0.0
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 17
+	platform_floor_layers = 0
 	var cs := CollisionShape3D.new()
 	capsule_node = cs
 	var cap := CapsuleShape3D.new()
@@ -75,6 +76,9 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority() or Game.menu_open:
 		return
+	if world.stations.station_for(peer_id) != "":
+		world.stations.handle_input(event)
+		return
 	if local_pilot and event.is_action_pressed("pilot_view"):
 		world.toggle_pilot_view()
 		return
@@ -94,7 +98,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.values.sensitivity * (-1.0 if Game.values.invert else 1.0), -1.5, 1.5)
 		head.rotation.x = pitch
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		if event.pressed and world.stations.aimed(peer_id) == "turret":
+			world.stations.request("turret")
+			get_viewport().set_input_as_handled()
+		elif event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and held_kind != Cargo.Kind.EMPTY and world.pilot_id != peer_id:
 			if event.pressed and charging_since < 0:
@@ -104,26 +111,27 @@ func _unhandled_input(event: InputEvent) -> void:
 				charging_since = -1
 				world.cargo_action("throw")
 	elif event.is_action_pressed("interact"):
-		if world.pilot_id != peer_id and at_ladder():
-			position = Vector3(.55, 2.19, -2.80) if position.y < 1.0 else Vector3(1.14,.03,-.83)
-			velocity = Vector3.ZERO
+		if world.queues.interact(peer_id): return
+		var station: String = world.stations.aimed(peer_id)
+		if station == "turret": return
+		if station == "delivery":
+			world.stations.request(station)
+			return
+		if world.emergency.aimed(head.global_transform):
+			world.emergency.request()
 			return
 		var item_id: int = world.aimed_loose(head.global_transform) if held_kind == Cargo.Kind.EMPTY else 0
-		if world.pilot_id != peer_id and item_id != 0:
+		if world.pilot_id != peer_id and world.access.aimed(head.global_transform) != "":
+			world.access.request(world.access.aimed(head.global_transform))
+		elif world.pilot_id != peer_id and item_id != 0:
 			world.cargo_action("pickup", item_id)
-		elif world.pilot_id == peer_id or position.distance_to(world.HELM_POS) < 2.5:
+		elif world.pilot_id == peer_id or global_position.distance_to(world.bomber.to_global(world.HELM_POS)) < 2.5:
 			world.request_helm()
 		else:
 			world.cargo_action("pickup")
 	elif event.is_action_pressed("drop_cargo"):
 		charging_since = -1
 		world.cargo_action("drop")
-
-
-func at_ladder() -> bool:
-	if position.y < 1.0:
-		return position.distance_to(Vector3(1.14, 0, -1.16)) < .95
-	return position.y > 2.0 and absf(position.x) < 1.18 and absf(position.z + 2.8) < 1.35
 
 
 func set_local_pilot(active: bool) -> void:
@@ -133,7 +141,7 @@ func set_local_pilot(active: bool) -> void:
 	dragging_orbit = false
 	cam.make_current()
 	if active:
-		rotation.y = 0
+		rotation.y = world.heading
 		pitch = -.30
 		head.rotation.x = pitch
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if active or Game.menu_open else Input.MOUSE_MODE_CAPTURED
@@ -198,10 +206,14 @@ func _physics_process(delta: float) -> void:
 		head.rotation.x = net_pitch
 		return
 
+	if world.stations.station_for(peer_id) != "":
+		velocity = Vector3.ZERO
+		world.get_parent().sync_elf.rpc(position,rotation.y,head.rotation.x,crouched,true)
+		return
 	Crouch.update(self, capsule_node, not Game.menu_open and world.pilot_id != peer_id and Input.is_action_pressed("crouch"))
 	if world.pilot_id == peer_id:
 		velocity = Vector3.ZERO
-		position = world.HELM_POS
+		global_position = world.bomber.to_global(world.HELM_POS)
 		if chase.current:
 			_update_chase(1.0 - exp(-7.0 * delta))
 		var v := Vector2.ZERO if Game.menu_open else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
@@ -218,8 +230,8 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 
 	# Safety net: if you somehow fall out of the ship, hop back in.
-	if global_position.y < world.bomber.global_position.y - 6.0:
-		position = Vector3(0, 0.3, 1)
+	if global_position.y < -20:
+		global_position = world.Airfield.SPAWN
 		velocity = Vector3.ZERO
 
 	world.get_parent().sync_elf.rpc(position, rotation.y, head.rotation.x, crouched, is_on_floor())

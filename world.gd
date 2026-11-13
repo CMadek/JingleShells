@@ -2,26 +2,36 @@ extends Node3D
 ## The whole game world: night-time village, the bomber, presents, scoring and networking.
 ## The host (peer 1) is authoritative for flight, drops and score.
 
+const Airfield := preload("res://airfield.gd")
+const Access := preload("res://aircraft_access.gd")
+var access: Node
+var flight_audio: Node3D
+var grounded := true
+var phase := "PREPARATION"
 const Cargo := preload("res://cargo.gd")
+const Trajectory := preload("res://cargo_trajectory.gd")
+var recipients: Node
+var preview: Node3D
 const PlayerScript := preload("res://player.gd")
 const Instruments := preload("res://assets/aircraft/instruments.gd")
 
-const HELM_POS := Vector3(0, 0, -5.2)   # stand here to take the helm
-const HATCH_POS := Vector3(0, 0, 3.0)   # center of the deck opening
+const HELM_POS := Vector3(0, 1.55, -7.0)   # stand here to take the helm
+const HATCH_POS := Vector3(0, 0, 3.0)   # legacy manual-delivery reference; Mk II deck is sealed
 const GRAVITY := 9.8
-const START_ALTITUDE := 45.0
+const START_ALTITUDE := Airfield.PARK.y
 const MIN_SPEED := 8.0
 const TURN_RATE := 0.45
-const NICE_POINTS := 10
-const NAUGHTY_PENALTY := 5
-const MIN_ALTITUDE := 20.0
+@export var nice_points := 10
+@export var naughty_penalty := 5
+@export var chimney_bonus := 5
+const MIN_ALTITUDE := Airfield.PARK.y
 const MAX_ALTITUDE := 1800.0
 
 # Flight model
 const STALL_SPEED := 9.0            # below this, no lift
 const CRUISE_SPEED := 14.0          # full lift at or above this
 const MAX_SPEED := 45.0             # hard cap (dive)
-const MIN_THROTTLE := 0.2           # idle; level cruise is ~14 m/s
+const MIN_THROTTLE := 0.0           # idle; level cruise is ~14 m/s
 const THROTTLE_RATE := 0.5          # throttle lever change per second
 const MAX_THRUST := 12.0            # accel at full throttle
 const DRAG := 0.012                 # accel lost = DRAG * speed^2
@@ -45,7 +55,11 @@ var players := {}          # peer id -> player node
 var pilot_id := 0          # 0 = helm is empty
 var score := 0
 var chimneys: Array = []   # {top: Vector3, nice: bool}
-const PILES := {Cargo.Kind.PRESENT: Vector3(-2, 0.55, 0), Cargo.Kind.BOMB: Vector3(2, 0.55, 0)}
+var queues: Node3D
+var stations: Node3D
+var emergency: Node3D
+var supply_points: Array = []
+const CABIN_BOUNDS := AABB(Vector3(-4.85,-.5,-12.2),Vector3(9.7,7,24.3))
 @export_range(1, 6) var pickup_range := 2.8
 @export_range(0.1, 4) var charge_seconds := 1.2
 @export var min_throw_speed := 2.5
@@ -60,12 +74,13 @@ var charge_start := {}
 var moving_hull: AnimatableBody3D
 var previous_plane: Transform3D
 var physics_delta := 1.0 / 60.0
+var last_flight_packet := 0
 
 # Flight state. The host simulates it; clients receive it via sync_bomber.
 var heading := 0.0      # yaw
 var pitch := 0.0        # nose up = positive
 var roll := 0.0         # right wing down = positive
-var speed := 14.0
+var speed := 0.0
 var throttle := MIN_THROTTLE
 var in_steer := 0.0
 var in_throttle := 0.0
@@ -82,10 +97,20 @@ var _beam_bad: StandardMaterial3D
 
 
 func _ready() -> void:
+	recipients = preload("res://house_delivery.gd").new()
+	recipients.world = self
+	add_child(recipients)
 	_build_environment()
 	_build_village()
+	var depot := Airfield.new()
+	depot.name = "Airfield"
+	add_child(depot)
+	depot.build(self)
 	_build_bomber()
 	_build_hud()
+	preview = preload("res://delivery_preview.gd").new()
+	preview.world = self
+	add_child(preview)
 	if multiplayer.is_server():
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 		add_player(1)
@@ -190,7 +215,7 @@ func _build_village() -> void:
 		for gz in range(-10, 11):
 			if rng.randf() < 0.2:
 				continue
-			var base := Vector3(gx * 24 + rng.randf_range(-4, 4), 0, gz * 24 + rng.randf_range(-4, 4))
+			var base := Vector3(gx * 24 + rng.randf_range(-4, 4), 0, -900 + gz * 24 + rng.randf_range(-4, 4))
 			var nice := rng.randf() < 0.7
 			var col: Color = walls[rng.randi() % walls.size()]
 			_make_house(base, col, nice)
@@ -219,7 +244,10 @@ func _make_house(base: Vector3, col: Color, nice: bool) -> void:
 	house.add_child(roof)
 	roof.create_convex_collision()
 
-	_box(house, Vector3(1.2, 3.5, 1.2), Vector3(2.2, 5.75, 1.0), Color(0.45, 0.2, 0.15))
+	var chimney_body := StaticBody3D.new()
+	house.add_child(chimney_body)
+	_box(chimney_body, Vector3(1.2, 3.5, 1.2), Vector3(2.2, 5.75, 1.0), Color(0.45, 0.2, 0.15), false, chimney_body)
+	recipients.register(house, nice, chimney_body)
 	if nice:
 		_box(house, Vector3(1.5, 1.5, 0.1), Vector3(-1.5, 2.5, 3.55), Color(1.0, 0.85, 0.4), true)
 
@@ -245,10 +273,23 @@ func _hull_box(hull: StaticBody3D, size: Vector3, center: Vector3) -> void:
 	hull.add_child(collision)
 
 
+func _walkway_wedge(hull: PhysicsBody3D, width: float, start: Vector3, end: Vector3) -> void:
+	# Smooth walking collision under the visible treads; no jumping up each riser.
+	var side := (end-start).cross(Vector3.UP).normalized()*width*.5
+	var points := PackedVector3Array()
+	for point in [start,end,Vector3(start.x,start.y-.18,start.z),Vector3(end.x,start.y-.18,end.z)]:
+		points.append(point-side)
+		points.append(point+side)
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = points
+	var collision := CollisionShape3D.new()
+	collision.shape = shape
+	hull.add_child(collision)
+
 func _build_bomber() -> void:
 	bomber = Node3D.new()
 	bomber.name = "Bomber"
-	bomber.position = Vector3(0, START_ALTITUDE, 300)
+	bomber.position = Airfield.PARK
 	add_child(bomber)
 
 	var airframe := preload("res://assets/aircraft/north_star.glb").instantiate()
@@ -256,39 +297,24 @@ func _build_bomber() -> void:
 	instruments = airframe as Instruments
 	bomber.add_child(airframe)
 	instruments.update_readings(self, 0.0)
-	var station := preload("res://assets/aircraft/dorsal_station.tscn").instantiate() as Node3D
-	bomber.add_child(station)
-	station.position = Vector3(0, 3.18, -2.8)
 	var hull := StaticBody3D.new()
 	hull.name = "Hull"
 	bomber.add_child(hull)
-	# Deck plates end at the lip so released cargo can clear the belly.
-	_hull_box(hull, Vector3(6,.4,9), Vector3(0,-.2,-2.5))
-	_hull_box(hull, Vector3(6,.4,3), Vector3(0,-.2,5.5))
-	for side in [-1, 1]:
-		_hull_box(hull, Vector3(2,.4,2), Vector3(side*2,-.2,3))
-		_hull_box(hull, Vector3(.14,3.1,14), Vector3(side*3,1.15,0))
-		_hull_box(hull, Vector3(1.9,.18,2.6), Vector3(side*2.20,3.03,-2.8))
-	_hull_box(hull, Vector3(6,3.2,.15), Vector3(0,1.50,7))
-	_hull_box(hull, Vector3(6,3.2,.15), Vector3(0,1.50,-7))
-	_hull_box(hull, Vector3(6,.18,2.9), Vector3(0,3.08,-5.55))
-	_hull_box(hull, Vector3(6,.18,8.5), Vector3(0,3.08,2.75))
-	_hull_box(hull, Vector3(2.29,.15,2.55), Vector3(0,2.10,-2.8))
-	for i in range(12):
-		var angle := TAU * i / 12.0
-		var radial := Vector3(sin(angle), 0, cos(angle))
-		_hull_box(hull, Vector3(.65,1.92,.09), Vector3(0,3.19,-2.8) + radial * 1.18)
-		(hull.get_child(-1) as CollisionShape3D).rotation.y = angle
-	_hull_box(hull, Vector3(2.49,1.1,.83), Vector3(0,.55,-6.98))
-	# The signed boards and coaming mark the helm and delivery hatch.
-	for kind in PILES:
-		var center: Vector3 = PILES[kind]
-		var display := Cargo.pile(kind)
-		bomber.add_child(display)
-		display.position = Vector3(center.x, 0, center.z)
-		# Face the decorated front toward the center aisle.
-		display.rotation.y = signf(-center.x) * PI / 2.0
-		_label3d(bomber, "PRESENTS" if kind == Cargo.Kind.PRESENT else "BOMBS", center + Vector3.UP)
+	var cabin_collision := CollisionShape3D.new()
+	cabin_collision.name = "FittedCabinCollision"
+	cabin_collision.shape = preload("res://assets/aircraft/cabin_collision.tres")
+	hull.add_child(cabin_collision)
+	# Level threshold meets the stationary airfield stairs at the exterior door.
+	_hull_box(hull,Vector3(1.4,.20,1.6),Vector3(-3.6,-.10,-4.8))
+	for side in [-1,1]:
+		_hull_box(hull,Vector3(.30,.25,21),Vector3(side*2.06,-2.75,.5))
+		_hull_box(hull,Vector3(9.8,.65,3.7),Vector3(side*8.2,.45,4.3))
+		_hull_box(hull,Vector3(2.85,2.85,5.4),Vector3(side*5.45,4.35,9.1))
+	_walkway_wedge(hull,1.9,Vector3(0,0,-2.5),Vector3(0,1.55,-5.6))
+	# Closed access face prevents walking through the hatch; click starts boarding.
+	_hull_box(hull,Vector3(1.5,1.5,.12),Vector3(1.9,.75,-5.64))
+	_hull_box(hull, Vector3(2.49,1.1,.83), Vector3(0,2.10,-8.63))
+	supply_points = preload("res://cargo_shelves.gd").build(self,hull)
 	# Elves ride by parenting. Cargo needs a moving surface with physics velocity.
 	hull.collision_layer = 16
 	if multiplayer.is_server():
@@ -300,6 +326,26 @@ func _build_bomber() -> void:
 			if child is CollisionShape3D:
 				moving_hull.add_child(child.duplicate())
 		add_child(moving_hull)
+	access = Access.new()
+	access.name = "AircraftAccess"
+	add_child(access)
+	access.build(self)
+	emergency = preload("res://emergency_exit.gd").new()
+	emergency.name = "EmergencyExit"
+	add_child(emergency)
+	emergency.build(self)
+	flight_audio = preload("res://flight_audio.gd").new()
+	flight_audio.name = "FlightAudio"
+	bomber.add_child(flight_audio)
+	flight_audio.build(self)
+	queues = preload("res://cargo_queues.gd").new()
+	queues.name = "CargoQueues"
+	add_child(queues)
+	queues.build(self)
+	stations = preload("res://crew_stations.gd").new()
+	stations.name = "CrewStations"
+	add_child(stations)
+	stations.build(self)
 	previous_plane = bomber.transform
 
 	var lamp := OmniLight3D.new()
@@ -308,11 +354,23 @@ func _build_bomber() -> void:
 	lamp.omni_range = 14.0
 	bomber.add_child(lamp)
 	var chart_light := OmniLight3D.new()
-	chart_light.position = Vector3(0, 2.2, -5.55)
+	chart_light.position = Vector3(0, 4.2, -7.2)
 	chart_light.light_color = Color(1.0, .81, .55)
 	chart_light.light_energy = 1.4
 	chart_light.omni_range = 4.0
 	bomber.add_child(chart_light)
+	var hold_light := OmniLight3D.new()
+	hold_light.position = Vector3(0,2.5,9.5)
+	hold_light.light_color = Color(1,.80,.55)
+	hold_light.light_energy = 1.5
+	hold_light.omni_range = 6
+	bomber.add_child(hold_light)
+	var gunner_light := OmniLight3D.new()
+	gunner_light.position = Vector3(1.75,-.72,-7.3)
+	gunner_light.light_color = Color(1,.84,.60)
+	gunner_light.light_energy = .65
+	gunner_light.omni_range = 2.6
+	bomber.add_child(gunner_light)
 
 
 func _build_hud() -> void:
@@ -331,7 +389,7 @@ func _build_hud() -> void:
 	view_button.pressed.connect(toggle_pilot_view)
 	hud_score = _hud_label(layer, Vector2(20, 14), 30)
 	hud_info = _hud_label(layer, Vector2(20, 58), 18)
-	hud_msg = _hud_label(layer, Vector2(20, 150), 30)
+	hud_msg = _hud_label(layer, Vector2(20, 215), 30)
 	var dot := ColorRect.new()
 	# Captured mouse events arrive at the center; the crosshair must not consume them.
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -363,7 +421,15 @@ func request_players() -> void:
 		add_player.rpc_id(id, pid)
 	add_player.rpc(id)
 	sync_score.rpc_id(id, score, "")
+	for house_id in recipients.houses.size():
+		if recipients.houses[house_id].destroyed:
+			destroy_house.rpc_id(id, house_id, recipients.houses[house_id].base, false)
 	set_pilot.rpc_id(id, pilot_id)
+	access.snapshot(id)
+	queues.snapshot(id)
+	stations.snapshot(id)
+	emergency.set_gone.rpc_id(id,emergency.gone,false)
+	sync_bomber.rpc_id(id,bomber.position,heading,pitch,roll,speed,throttle,0.0,Vector3(in_steer,in_throttle,in_climb))
 	for pid in players:
 		crew_posture.rpc_id(id, pid, players[pid].crouched, players[pid].is_on_floor() if pid == 1 else players[pid].net_grounded)
 		if players[pid].held_kind != Cargo.Kind.EMPTY:
@@ -384,8 +450,8 @@ func add_player(id: int) -> void:
 	p.peer_id = id
 	p.world = self
 	p.set_multiplayer_authority(id)
-	p.position = Vector3(randf_range(-1.5, 1.5), 0.3, randf_range(-1.0, 2.0))
-	bomber.add_child(p)
+	p.position = Airfield.SPAWN + Vector3((id % 4) * 1.1, 0, (id % 2) * 1.1)
+	add_child(p)
 	players[id] = p
 
 
@@ -398,6 +464,7 @@ func remove_player(id: int) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	charge_start.erase(id)
+	stations.drop_peer(id)
 	if pilot_id == id:
 		set_pilot.rpc(0)
 	remove_player.rpc(id)
@@ -419,7 +486,8 @@ func _helm_rpc() -> void:
 
 
 func _handle_helm(id: int) -> void:
-	if pilot_id == 0 and players.has(id) and players[id].position.distance_to(HELM_POS) < 3.5:
+	if stations.station_for(id) != "": return
+	if pilot_id == 0 and players.has(id) and players[id].global_position.distance_to(bomber.to_global(HELM_POS)) < 3.5:
 		set_pilot.rpc(id)
 	elif pilot_id == id:
 		set_pilot.rpc(0)
@@ -480,57 +548,111 @@ func _physics_process(delta: float) -> void:
 		previous_plane = bomber.transform
 		physics_delta = delta
 		_fly(delta)
+		carry_crew(previous_plane)
 		moving_hull.transform = bomber.transform
 		var vertical_speed := (bomber.position.y - previous_plane.origin.y) / delta
 		instruments.update_readings(self, vertical_speed)
-		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed, throttle, vertical_speed)
+		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed, throttle, vertical_speed, Vector3(in_steer,in_throttle,in_climb))
 		_step_cargo(delta)
+	access.step(delta)
+
+func flight_state() -> Dictionary:
+	return {"position":bomber.position,"heading":heading,"pitch":pitch,"roll":roll,
+		"speed":speed,"throttle":throttle,"grounded":grounded,"phase":phase,
+		"in_steer":in_steer,"in_throttle":in_throttle,"in_climb":in_climb}
+
+func flight_pose(state: Dictionary) -> Transform3D:
+	return Transform3D(Basis.from_euler(Vector3(state.pitch,state.heading,-state.roll),EULER_ORDER_YXZ),state.position)
+
+func forecast_flight(delay: float) -> Dictionary:
+	var state := flight_state()
+	var step := 1.0/Engine.physics_ticks_per_second
+	var pose := bomber.transform
+	var previous := previous_plane
+	var ticks := maxi(0,ceili(delay/step-0.00001))
+	for i in ticks:
+		previous = pose
+		advance_flight(state,step)
+		pose = flight_pose(state)
+		if not pose.origin.is_finite() or absf(pose.origin.x)>2900 or absf(pose.origin.z)>2900: return {}
+	return {"pose":pose,"previous":previous,"delta":step if ticks else physics_delta}
 
 func _fly(delta: float) -> void:
+	var state := flight_state()
+	advance_flight(state,delta)
+	bomber.position = state.position
+	heading = state.heading
+	pitch = state.pitch
+	roll = state.roll
+	speed = state.speed
+	throttle = state.throttle
+	grounded = state.grounded
+	phase = state.phase
+	_apply_attitude()
+	recover_outside_world()
+
+func advance_flight(state: Dictionary, delta: float) -> void:
+	# Pure simulation step shared by the host and delayed-release forecast.
 	# Throttle is a lever: it stays where you leave it.
-	throttle = clampf(throttle + in_throttle * THROTTLE_RATE * delta, MIN_THROTTLE, 1.0)
+	state.throttle = clampf(state.throttle + state.in_throttle * THROTTLE_RATE * delta, MIN_THROTTLE, 1.0)
+
+	if state.grounded:
+		state.pitch = 0
+		state.roll = 0
+		state.speed = clampf(state.speed + (MAX_THRUST*state.throttle - DRAG*state.speed*state.speed - (10.0 if state.in_throttle < 0 else 1.0))*delta,0,MAX_SPEED)
+		state.heading -= state.in_steer * .42 * minf(state.speed / 5.0, 1.0) * delta
+		state.position += Vector3(-sin(state.heading),0,-cos(state.heading))*state.speed*delta
+		state.position.y = MIN_ALTITUDE
+		state.phase = "TAXI / TAKEOFF" if state.speed > .1 else "PREPARATION"
+		if state.in_climb > 0 and state.speed >= 18:
+			state.grounded = false
+			state.pitch = .12
+			state.phase = "IN FLIGHT"
+
+		return
 
 	# 0 = stalled, 1 = full lift. Control authority also scales with airspeed.
-	var lift := clampf((speed - STALL_SPEED) / (CRUISE_SPEED - STALL_SPEED), 0.0, 1.0)
-	var authority := clampf(speed / CRUISE_SPEED, 0.3, 1.3)
+	var lift := clampf((state.speed - STALL_SPEED) / (CRUISE_SPEED - STALL_SPEED), 0.0, 1.0)
+	var authority := clampf(state.speed / CRUISE_SPEED, 0.3, 1.3)
 
 	# Roll: stick commands a bank angle, which self-levels when released.
-	roll = move_toward(roll, in_steer * MAX_ROLL, ROLL_RATE * authority * delta)
+	state.roll = move_toward(state.roll, state.in_steer * MAX_ROLL, ROLL_RATE * authority * delta)
 
 	# Pitch: stick commands a rate. With no input the nose eases back to level
 	# (this is also the "autopilot" when nobody is at the helm).
-	if absf(in_climb) > 0.01:
-		pitch += in_climb * PITCH_RATE * authority * maxf(lift, 0.3) * delta
+	if absf(state.in_climb) > 0.01:
+		state.pitch += state.in_climb * PITCH_RATE * authority * maxf(lift, 0.3) * delta
 	else:
-		pitch = move_toward(pitch, 0.0, LEVEL_RATE * delta)
-	pitch -= (1.0 - lift) * STALL_NOSE_DROP * delta   # stalled: nose drops
-	pitch = clampf(pitch, -MAX_PITCH, MAX_PITCH)
+		state.pitch = move_toward(state.pitch, 0.0, LEVEL_RATE * delta)
+	state.pitch -= (1.0 - lift) * STALL_NOSE_DROP * delta   # stalled: nose drops
+	state.pitch = clampf(state.pitch, -MAX_PITCH, MAX_PITCH)
 
-	# Coordinated turn: yaw rate = g * tan(bank) / speed. Faster = wider turns.
-	# Positive roll is a right turn, which means heading decreases.
-	heading -= GRAVITY * tan(roll) / maxf(speed, 1.0) * TURN_FACTOR * delta
+	# Coordinated turn: yaw rate = g * tan(bank) / state.speed. Faster = wider turns.
+	# Positive state.roll is a right turn, which means state.heading decreases.
+	state.heading -= GRAVITY * tan(state.roll) / maxf(state.speed, 1.0) * TURN_FACTOR * delta
 
-	# Energy: thrust vs drag, and climbing trades speed for height.
-	var accel := MAX_THRUST * throttle - DRAG * speed * speed - PITCH_GRAVITY * sin(pitch)
-	speed = clampf(speed + accel * delta, 4.0, MAX_SPEED)
+	# Energy: thrust vs drag, and climbing trades state.speed for height.
+	var accel: float = MAX_THRUST * state.throttle - DRAG * state.speed * state.speed - PITCH_GRAVITY * sin(state.pitch)
+	state.speed = clampf(state.speed + accel * delta, 4.0, MAX_SPEED)
 
 	# Velocity follows the nose, minus sink from stalling and from banking.
-	var cp := cos(pitch)
-	var vel := Vector3(-sin(heading) * cp, sin(pitch), -cos(heading) * cp) * speed
+	var cp: float = cos(state.pitch)
+	var vel: Vector3 = Vector3(-sin(state.heading) * cp, sin(state.pitch), -cos(state.heading) * cp) * state.speed
 	vel.y -= (1.0 - lift) * STALL_SINK
-	vel.y -= (1.0 - cos(roll)) * 4.0   # lift lost to bank
-	bomber.position += vel * delta
+	vel.y -= (1.0 - cos(state.roll)) * 4.0   # lift lost to bank
+	state.position += vel * delta
 
 	# Altitude limits: ground/ceiling push the nose back toward level.
-	if bomber.position.y < MIN_ALTITUDE:
-		bomber.position.y = MIN_ALTITUDE
-		pitch = maxf(pitch, 0.0)
-	elif bomber.position.y > MAX_ALTITUDE:
-		bomber.position.y = MAX_ALTITUDE
-		pitch = minf(pitch, 0.0)
+	if state.position.y < MIN_ALTITUDE:
+		state.position.y = MIN_ALTITUDE
+		state.pitch = 0
+		state.roll = 0
+		state.grounded = true
+		state.phase = "LANDED / HOLD S TO BRAKE"
+	elif state.position.y > MAX_ALTITUDE:
+		state.position.y = MAX_ALTITUDE
+		state.pitch = minf(state.pitch, 0.0)
 
-	_apply_attitude()
-	
 	
 func _apply_attitude() -> void:
 	# Godot's YXZ euler order = yaw, then pitch, then roll. Right wing down = -z.
@@ -538,8 +660,19 @@ func _apply_attitude() -> void:
 
 
 @rpc("authority", "unreliable_ordered")
-func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: float, vertical_speed: float) -> void:
+func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: float, vertical_speed: float, controls: Vector3 = Vector3.ZERO) -> void:
+	in_steer = controls.x
+	in_throttle = controls.y
+	in_climb = controls.z
+	var old := bomber.transform
+	previous_plane = old
+	var now := Time.get_ticks_msec()
+	if last_flight_packet != 0:
+		physics_delta = maxf((now - last_flight_packet) / 1000.0, .001)
+	last_flight_packet = now
 	bomber.position = pos
+	grounded = pos.y <= MIN_ALTITUDE + .001 and absf(p) < .01
+	phase = ("PREPARATION" if s < .1 else "TAXI / TAKEOFF") if grounded else "IN FLIGHT"
 	heading = h
 	pitch = p
 	roll = r
@@ -547,15 +680,22 @@ func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: fl
 	throttle = power
 	instruments.update_readings(self, vertical_speed)
 	_apply_attitude()
+	carry_crew(old)
 
 
 func aimed_pile(view: Transform3D) -> int:
-	for kind in PILES:
-		var offset: Vector3 = bomber.to_global(PILES[kind]) - view.origin
+	var selected := Cargo.Kind.EMPTY
+	var best_alignment := .32
+	for supply in supply_points:
+		var offset: Vector3 = bomber.to_global(supply.point) - view.origin
 		var along := offset.dot(-view.basis.z)
-		if along > 0 and offset.length() <= pickup_range and (offset + view.basis.z * along).length() <= 0.62:
-			return kind
-	return Cargo.Kind.EMPTY
+		var alignment := (offset + view.basis.z * along).length()
+		if along > 0 and offset.length() <= pickup_range and alignment < best_alignment:
+			var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(view.origin,view.origin+offset,1|16))
+			if hit.is_empty():
+				selected = supply.kind
+				best_alignment = alignment
+	return selected
 
 
 func aimed_loose(view: Transform3D) -> int:
@@ -593,12 +733,12 @@ func _cargo_rpc(action: String, yaw: float, look_pitch: float, item_id: int) -> 
 
 
 func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float, item_id: int) -> void:
-	if id == pilot_id or not players.has(id) or not is_finite(yaw) or not is_finite(look_pitch):
+	if id == pilot_id or stations.station_for(id) != "" or not players.has(id) or not is_finite(yaw) or not is_finite(look_pitch):
 		return
 	var elf = players[id]
 	var feet: Vector3 = elf.position if id == 1 else elf.net_pos
 	var aim := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(look_pitch, -1.5, 1.5))
-	var view := Transform3D(bomber.basis * aim, bomber.to_global(feet + Vector3.UP * elf.head.position.y))
+	var view := Transform3D(aim, feet + Vector3.UP * elf.head.position.y)
 	if action == "pickup" and elf.held_kind == Cargo.Kind.EMPTY:
 		if item_id != 0:
 			if loose.has(item_id) and aimed_loose(view) == item_id:
@@ -649,28 +789,33 @@ func set_held(id: int, kind: int) -> void:
 		players[id].carry(kind)
 
 
-func _release(id: int, kind: int, view: Transform3D, impulse: float) -> void:
+func release_state(id: int, kind: int, view: Transform3D, impulse: float) -> Dictionary:
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = Cargo.shape(kind)
 	query.transform = view
 	query.collision_mask = 1 | 4 | 16
 	var space := get_world_3d().direct_space_state
 	if not space.intersect_shape(query, 1).is_empty():
-		return
+		return {}
 	query.motion = view.basis * Vector3(0.20, -0.18, -0.95)
 	var fraction := space.cast_motion(query)[0]
 	var pos := view.origin + query.motion * maxf(0, fraction - 0.025)
 	# Difference the release point across plane poses to include rotation and altitude limits.
 	var local_pos := bomber.to_local(pos)
-	var inherited := (pos - previous_plane * local_pos) / physics_delta
+	var inherited := (pos - previous_plane * local_pos) / physics_delta if aboard(players[id].global_position) else Vector3.ZERO
+	return {"pose": Transform3D(view.basis,pos), "velocity": inherited - view.basis.z * impulse}
+
+func _release(id: int, kind: int, view: Transform3D, impulse: float) -> void:
+	var state := release_state(id, kind, view, impulse)
+	if state.is_empty(): return
 	if loose.size() >= max_loose_items and not loose.is_empty():
 		remove_loose.rpc(loose.keys()[0])
 	var item_id := next_item
 	next_item += 1
 	set_held.rpc(id, Cargo.Kind.EMPTY)
-	show_loose.rpc(item_id, kind, Transform3D(view.basis, pos))
+	show_loose.rpc(item_id, kind, state.pose)
 	var body: RigidBody3D = loose[item_id]
-	body.linear_velocity = inherited - view.basis.z * impulse
+	body.linear_velocity = state.velocity
 
 
 @rpc("authority", "call_local", "reliable")
@@ -687,8 +832,8 @@ func show_loose(item_id: int, kind: int, pose: Transform3D) -> void:
 		body.contact_monitor = true
 		body.max_contacts_reported = 8
 		body.body_entered.connect(func(other: Node3D):
-			if other is PhysicsBody3D and (other.collision_layer & 1) != 0:
-				body.set_meta("landed", true)
+			if other is PhysicsBody3D and (other.collision_layer & 1) != 0 and not at_airfield(body.position):
+				if not body.has_meta("impact_collider"): body.set_meta("impact_collider", other)
 		)
 		body.linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 		body.linear_damp = 0
@@ -713,20 +858,15 @@ func _step_cargo(delta: float) -> void:
 		var body: Node3D = loose[item_id]
 		var prev: Vector3 = body.get_meta("previous")
 		var pos := body.position
-		var age := float(body.get_meta("age")) + delta
-		var delivered := false
-		if body.get_meta("kind") == Cargo.Kind.PRESENT and prev.y >= 7.5 and pos.y < 7.5:
-			var crossing := prev.lerp(pos, (prev.y - 7.5) / (prev.y - pos.y))
-			for chimney in chimneys:
-				if crossing.distance_to(chimney.top) < 0.5:
-					_award(chimney)
-					delivered = true
-					break
-		if not delivered and body.has_meta("landed"):
-			landing_burst.rpc(pos, body.get_meta("kind"))
-			remove_loose.rpc(item_id)
+		var age := 0.0 if aboard(body.position) or at_airfield(body.position) else float(body.get_meta("age")) + delta
+		var hit := Trajectory.sweep(get_world_3d().direct_space_state, Cargo.shape(body.get_meta("kind")), Transform3D(body.basis, prev), pos-prev, 1, [body.get_rid()])
+		if hit.is_empty() and body.has_meta("impact_collider"):
+			var collider = body.get_meta("impact_collider")
+			if is_instance_valid(collider): hit = {"collider": collider, "point": pos}
+		if not hit.is_empty() and not at_airfield(pos):
+			_resolve_impact(item_id, hit.get("collider"), hit.get("point",pos))
 			continue
-		if delivered or age >= cargo_lifetime or pos.y < -5 or pos.distance_to(bomber.position) > 3000:
+		if age >= cargo_lifetime or pos.y < -5 or pos.distance_to(bomber.position) > 3000:
 			remove_loose.rpc(item_id)
 			continue
 		body.set_meta("age", age)
@@ -747,7 +887,7 @@ func sync_loose(snapshot: Dictionary, plane_pose: Transform3D) -> void:
 		var pose: Transform3D = snapshot[id]
 		var cabin_pose := inverse_plane * pose
 		# Keep deck cargo aligned with the faster flight updates between snapshots.
-		var in_cabin := AABB(Vector3(-3.5, -0.6, -7.5), Vector3(7, 4, 15)).has_point(cabin_pose.origin)
+		var in_cabin := AABB(Vector3(-3.5, -0.6, -7.5), Vector3(7, 4, 20)).has_point(cabin_pose.origin)
 		var parent: Node3D = bomber if in_cabin else self
 		if visual.get_parent() != parent:
 			visual.reparent(parent, false)
@@ -756,8 +896,10 @@ func sync_loose(snapshot: Dictionary, plane_pose: Transform3D) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func landing_burst(pos: Vector3, kind: int) -> void:
+	flight_audio.cargo_impact(pos,kind == Cargo.Kind.BOMB)
 	var burst := Node3D.new()
 	add_child(burst)
+	recipients.track_effect(burst)
 	burst.position = pos
 	var bomb := kind == Cargo.Kind.BOMB
 	var colors := [Color.ORANGE_RED, Color.GOLD, Color.ORANGE] if bomb else [Color.CRIMSON, Color.GOLD, Color.SEA_GREEN]
@@ -792,14 +934,32 @@ func remove_loose(item_id: int) -> void:
 		loose.erase(item_id)
 
 
-func _award(chimney: Dictionary) -> void:
-	if chimney["nice"]:
-		score += NICE_POINTS
-		sync_score.rpc(score, "Delivered! +%d" % NICE_POINTS)
-	else:
-		score -= NAUGHTY_PENALTY
-		sync_score.rpc(score, "Naughty house! -%d" % NAUGHTY_PENALTY)
+func _resolve_impact(item_id: int, collider: Object, point: Vector3) -> void:
+	if not multiplayer.is_server() or not loose.has(item_id): return
+	var kind: int = loose[item_id].get_meta("kind")
+	var recipient: Dictionary = recipients.identify(collider)
+	# Retire before effects/scoring: every release has exactly one outcome.
+	remove_loose.rpc(item_id)
+	if not recipient.is_empty():
+		var house: Dictionary = recipients.houses[recipient.id]
+		if not house.destroyed:
+			if kind == Cargo.Kind.BOMB:
+				destroy_house.rpc(recipient.id, point, true)
+				return
+			var amount: int = nice_points + (chimney_bonus if recipient.precision else 0) if house.nice else -naughty_penalty
+			var message := ("Chimney delivery!" if recipient.precision and house.nice else ("Delivered!" if house.nice else "Naughty house!")) + " %+d" % amount
+			score += amount
+			sync_score.rpc(score, message)
+			delivery_feedback.rpc(point, message)
+	landing_burst.rpc(point, kind)
 
+@rpc("authority", "call_local", "reliable")
+func destroy_house(id: int, point: Vector3, animate: bool) -> void:
+	recipients.destroy(id, point, animate)
+
+@rpc("authority", "call_local", "reliable")
+func delivery_feedback(point: Vector3, message: String) -> void:
+	recipients.popup(point, message)
 
 @rpc("authority", "call_local", "reliable")
 func sync_score(s: int, msg: String) -> void:
@@ -813,16 +973,14 @@ func sync_score(s: int, msg: String) -> void:
 func _process(delta: float) -> void:
 	hud_score.text = "Score: %d" % score
 	var me := multiplayer.get_unique_id()
-	var txt := "Speed %d   Altitude %d\n" % [speed, bomber.position.y]
+	var txt := "%s | Speed %d m/s | Throttle %d%% | Altitude %d\n" % [phase,speed,throttle*100,bomber.position.y]
 	if pilot_id == me:
 		txt += "PILOTING: W/S speed, A/D turn, Space/Shift climb/dive, E to leave the helm"
 		if players.has(me) and players[me].chase.current:
 			txt += "   Hold RMB and drag to orbit"
 	else:
 		var elf = players.get(me)
-		if elf and elf.at_ladder():
-			txt += "E to use gunner ladder"
-		elif elf and elf.held_kind != Cargo.Kind.EMPTY:
+		if elf and elf.held_kind != Cargo.Kind.EMPTY:
 			txt += "Hold left click to throw   G to drop"
 			if elf.charging_since >= 0:
 				var elapsed := (Time.get_ticks_msec() - int(elf.charging_since)) / 1000.0
@@ -834,8 +992,82 @@ func _process(delta: float) -> void:
 		else:
 			txt += "WASD walk, Space jump, E at the helm to fly"
 	txt += "\nGreen chimney = nice, red chimney = naughty. Ctrl crouches. Esc opens the menu."
+	var local_elf = players.get(me)
+	if local_elf:
+		var queue_prompt: String = queues.prompt(me)
+		if queue_prompt != "": txt += "\n"+queue_prompt
+		var station_target: String = stations.aimed(me) if queue_prompt == "" else ""
+		if station_target == "turret": txt += "\nClick — Enter gun hatch • Ctrl — Leave turret"
+		elif station_target == "delivery": txt += "\nE — Operate delivery console • Q — Leave"
+		if emergency.aimed(local_elf.head.global_transform): txt += "\nE — Emergency exit (tears door off)"
+		var target: String = access.aimed(local_elf.head.global_transform)
+		if target != "": txt += "\nE — " + ("Close " if access.opened[target] else "Open ") + target
+	if grounded:
+		txt += "\nW throttle • Space at 18 m/s to take off • Hold S to brake"
+	hud_info.visible = stations.active_local == ""
 	hud_info.text = txt
 	if msg_timer > 0.0:
 		msg_timer -= delta
 		if msg_timer <= 0.0:
 			hud_msg.text = ""
+
+func aboard(point: Vector3) -> bool:
+	# Cabin and crew stations travel with the aircraft.
+	return CABIN_BOUNDS.has_point(bomber.to_local(point))
+
+func at_airfield(point: Vector3) -> bool:
+	return absf(point.x) < 65 and point.z > -300 and point.z < 920
+
+func carry_crew(old: Transform3D) -> void:
+	for elf in players.values():
+		var local: Vector3 = old.affine_inverse()*elf.global_position
+		if CABIN_BOUNDS.has_point(local):
+			elf.global_transform = bomber.transform * old.affine_inverse() * elf.global_transform
+			var yaw_delta := angle_difference(old.basis.get_euler().y, bomber.rotation.y)
+			if not elf.is_multiplayer_authority():
+				elf.net_pos = bomber.transform*(old.affine_inverse()*elf.net_pos)
+				elf.net_yaw += yaw_delta
+
+func recover_outside_world() -> void:
+	if not bomber.position.is_finite() or absf(bomber.position.x) > 2900 or absf(bomber.position.z) > 2900:
+		begin_level()
+
+func begin_level() -> void:
+	if not multiplayer.is_server():
+		return
+	stations.reset()
+	queues.reset()
+	set_pilot.rpc(0)
+	for id in loose.keys(): remove_loose.rpc(id)
+	charge_start.clear()
+	for id in players: set_held.rpc(id,Cargo.Kind.EMPTY)
+	bomber.position = Airfield.PARK
+	heading = 0
+	pitch = 0
+	roll = 0
+	speed = 0
+	throttle = 0
+	grounded = true
+	phase = "PREPARATION"
+	_apply_attitude()
+	previous_plane = bomber.transform
+	moving_hull.transform = bomber.transform
+	sync_bomber.rpc(bomber.position,heading,pitch,roll,speed,throttle,0.0,Vector3(in_steer,in_throttle,in_climb))
+	access.set_state.rpc("door",true,1.0)
+	access.set_state.rpc("hatch",false,0.0)
+	reset_crew.rpc()
+
+@rpc("authority", "call_local", "reliable")
+func reset_crew() -> void:
+	emergency.set_gone(false,false)
+	flight_audio.reset_state()
+	for id in players:
+		var elf = players[id]
+		elf.global_position = Airfield.SPAWN + Vector3((id%4)*1.1,0,(id%2)*1.1)
+		elf.net_pos = elf.global_position
+		elf.velocity = Vector3.ZERO
+		elf.rotation = Vector3.ZERO
+		elf.net_yaw = 0
+		elf.net_pitch = 0
+		elf.pitch = 0
+		elf.head.rotation = Vector3.ZERO

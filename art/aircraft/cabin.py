@@ -1,31 +1,66 @@
-group("03 Fir deck and delivery hatch")
-# Deck boards break around the actual two metre delivery opening.
-for i in range(18):
-    x=(i-8.5)/3
-    spans=[(-7,-4),(-2,7)] if abs(x)<1 else [(-7,7)]
+from math import asin, acos
+group("03 Fitted carpet and turret access")
+carpet=mat("Deep spruce wool carpet",(.039,.105,.083),0,.97)
+runner=mat("Cranberry wool aisle runner",(.245,.035,.054),0,.97)
+binding=mat("Champagne woven carpet binding",(.48,.32,.13),0,.92)
+for fabric in (carpet,runner,binding):
+    fabric.node_tree.nodes.get("Principled BSDF").inputs["Sheen Weight"].default_value=.28
+def wool_texture(material):
+    # Packed, UV-mapped weave survives the GLB export; no Blender-only shader noise.
+    noise=random.Random(74)
+    size=128
+    color=material.diffuse_color[:3]
+    pixels=[]
+    for row in range(size):
+        for col in range(size):
+            fiber=1+noise.uniform(-.10,.10)+(.025 if (col+row//2)%3==0 else -.012)
+            rgb=[max(0,min(1,c*fiber)) for c in color]
+            pixels.extend([12.92*c if c<=.0031308 else 1.055*c**(1/2.4)-.055 for c in rgb]+[1])
+    image=bpy.data.images.new(material.name+" weave",width=size,height=size)
+    image.colorspace_settings.name="sRGB"
+    image.pixels.foreach_set(pixels)
+    image.pack()
+    texture=material.node_tree.nodes.new("ShaderNodeTexImage");texture.image=image
+    material.node_tree.links.new(texture.outputs["Color"],material.node_tree.nodes.get("Principled BSDF").inputs["Base Color"])
+for fabric in (carpet,runner):wool_texture(fabric)
+def carpet_uv(part):
+    uv=part.data.uv_layers.new(name="Wool weave")
+    for loop in part.data.loops:
+        p=part.data.vertices[loop.vertex_index].co
+        uv.data[loop.index].uv=(p.x/.32,p.y/.32)
+# Continuous fitted pieces retain the exact deck height and open climb-in well.
+deck=[]
+for x,width,spans in [(-1.9,5.7,[(-12,9.4)]),(1.75,1.6,[(-12,6.55),(8.05,9.4)]),(3.65,2.2,[(-12,9.4)])]:
     for lo,hi in spans:
-        y=lo
-        while y<hi-.001:
-            end=min(hi,y+rng.uniform(2.2,3.65))
-            box("Tongue and groove decking",(x,(y+end)/2,-.105),(.331,end-y-.009,.21),rng.choice(wood),.009)
-            y=end
+        deck.append(box("Fitted carpet deck",(x,(lo+hi)/2,-.105),(width,hi-lo,.21),carpet,.006))
+# Intersect with the actual interior shell: floor corners cannot emerge through the nose.
+envelope=loft("Temporary deck fitting envelope",[airframe_ring(st,.065) for st in airframe_stations],pine)
+for part in deck:
+    bpy.context.view_layer.objects.active=part
+    for modifier in list(part.modifiers):bpy.ops.object.modifier_apply(modifier=modifier.name)
+    modifier=part.modifiers.new("Fit carpet inside curved shell","BOOLEAN")
+    modifier.operation="INTERSECT";modifier.object=envelope
+    bpy.ops.object.modifier_apply(modifier=modifier.name)
+    carpet_uv(part)
+    assert len(part.data.polygons)>0,"Carpet fitting removed a deck section"
+    assert all(abs(v.co.x)<airframe_surface_x(v.co.y,v.co.z)-.03 for v in part.data.vertices),"Deck penetrates the outer airframe"
+bpy.data.objects.remove(envelope,do_unlink=True)
+for lo,hi in [(-11.85,2.5)]:
+    carpet_uv(box("Carpet aisle runner",(0,(lo+hi)/2,.004),(1.46,hi-lo,.008),runner,.004))
+    for x in (-.705,.705):
+        box("Woven runner border",(x,(lo+hi)/2,.009),(.026,hi-lo-.035,.004),binding,.002)
+    for y in (lo+.028,hi-.028):
+        box("Woven runner end binding",(0,y,.009),(1.43,.026,.004),binding,.002)
 for side in (-1,1):
-    box("Hatch coaming",(side*1.042,-3,.013),(.085,2.18,.05),gold)
-    box("Hatch threshold",(0,-3+side*1.043,.013),(2.04,.085,.05),gold)
-    for i in range(4): rod("Hatch hinge",(side*1.10,-3.82+i*.48,.045),(side*1.10,-3.54+i*.48,.045),.046,iron)
-    for y in (-.98,.98):
-        line("Cargo bay hoop",[(side*2.91,y,.10),(side*2.91,y,.47),(side*1.43,y,.47),(side*1.43,y,.08)],.047,gold)
-        box("Anchor shoe",(side*1.43,y,.045),(.23,.21,.09),pine)
-    for y in (-6,-3,0,3,5.8):
-        box("Sconce shoe",(side*2.86,y,2.35),(.15,.32,.35),pine)
-        rod("Lamp lens",(side*2.70,y,2.25),(side*2.70,y,2.48),.107,warm,16)
-        for z in (2.23,2.49):box("Lantern cap",(side*2.72,y,z),(.29,.29,.05),gold)
-    for y in (-5.8,-2.9,.2,3.2,5.9):
-        # Double pinstripe and hammer-set fasteners beneath the window belt.
-        for z in (.74,.84):box("Coach line",(side*3.08,y,z),(.022,2.55,.028),gold)
-        for j in range(6):
-            rod("Belt rivet",(side*3.07,y-1+j*.41,.58),(side*3.10,y-1+j*.41,.58),.033,gold,8)
-    label("Registry","NORTH   STAR",(side*3.09,1.1,.99),(pi/2,0,side*pi/2),.34,cream)
+    pts=[(side*(airframe_surface_x(y,.045)-.09),y,.045) for y in [-11.9+i*18.8/112 for i in range(113)]]
+    line("Carpet perimeter binding",pts,.018,binding)
+for side in (-1,1):
+    for y in (-6,-3,0,3,5.0):
+        cx=airframe_surface_x(y,3.8)-.12
+        rod("Lamp wall bracket",(side*(airframe_surface_x(y,3.55)-.06),y,3.55),(side*cx,y,3.55),.04,pine)
+        box("Sconce shoe",(side*cx,y,3.55),(.15,.32,.35),pine)
+        rod("Lamp lens",(side*(cx-.2),y,3.45),(side*(cx-.2),y,3.68),.107,warm,16)
+        for z in (3.43,3.69):box("Lantern cap",(side*(cx-.18),y,z),(.29,.29,.05),gold)
 group("04 Flight deck")
 box("Chart console",(0,6.28,.54),(2.49,.83,1.06),pine,.095)
 box("Walnut fascia",(0,5.85,.82),(2.4,.105,.51),wood[1],.06)
@@ -91,26 +126,59 @@ for i in range(2):
     rod("Throttle lever",(.95+i*.10,6.16,1.11),(.95+i*.10,6.03,1.27),.023,gold)
     box("Lever grip",(.95+i*.10,6.03,1.27),(.08,.1,.076),red)
 for instrument in coll.objects:
-    if instrument.parent is None: instrument.location.y += .70
-# Seal the rear of the usable cabin with a paneled pressure door.
-box("Aft bulkhead",(0,-6.99,1.42),(5.87,.11,2.87),pine,.06)
-box("Service door surround",(0,-6.90,1.14),(1.42,.09,2.28),gold,.1)
-box("Aft service door",(0,-6.835,1.14),(1.32,.09,2.18),berry,.08)
-rod("Inspection port",(0,-6.77,1.61),(0,-6.80,1.61),.31,gold,40)
-rod("Port insert",(0,-6.744,1.61),(0,-6.775,1.61),.249,iron,40)
-label("Builders plate","NORTH STAR   /   025",(0,-6.77,.86),(pi/2,0,pi),.084,cream)
-for x in (-.55,.55):
-    line("Ladder upright",[(x+1.14,1.22,.04),(x+1.14,1.22,2.23),(x+.83,1.53,2.41)],.047,gold)
-for i in range(7):rod("Ladder rung",(.59,1.22,.22+i*.30),(1.69,1.22,.22+i*.30),.038,iron)
-box("Gunner landing",(0,2.80,2.10),(2.29,2.55,.15),pine,.05)
+    if instrument.parent is None: instrument.location.y += 2.35
+    if instrument.parent is None: instrument.location.z += 1.55
+# Open passage into the windowless aft stores compartment.
+pw,ph,pc=airframe_profile(-7)
+pw-=.09;ph-=.09
+pp=airframe_power(-7)
+for side in (-1,1):
+    arc=[(side*pw*airframe_signed_power(cos(a),2/pp),pc+ph*airframe_signed_power(sin(a),2/pp)) for a in [asin(airframe_signed_power(-pc/ph,pp/2))+(acos((1.04/pw)**(pp/2))-asin(airframe_signed_power(-pc/ph,pp/2)))*i/32 for i in range(33)]]
+    outline=[(side*1.04,0)]+arc+[(side*1.04,arc[-1][1])]
+    loft("Curved hold partition",[[(x,y,z) for x,z in outline] for y in (-7.07,-6.93)],pine)
+    box("Passage jamb",(side*1.04,-6.90,1.23),(.10,.12,2.46),gold,.025)
+    for y in (-8,-10):
+        box("Hold lamp shoe",(side*3.55,y,3.55),(.15,.32,.35),pine)
+        rod("Hold lamp",(side*3.35,y,3.45),(side*3.35,y,3.68),.107,warm,16)
+lintel_top=pc+ph*(1-(1.065/pw)**pp)**(1/pp)
+box("Passage lintel",(0,-7,(2.46+lintel_top)/2),(2.13,.14,lintel_top-2.46),pine,.04)
+for side in (-1,1):
+    pts=[(side*1.0,-6.82,.08),(side*1.0,-6.82,2.24)]
+    pts += [(side*(.80+.20*cos(a)),-6.82,2.24+.20*sin(a)) for a in [i*pi/32 for i in range(17)]]
+    pts.append((0,-6.82,2.44))
+    line("Rounded passage brass casing",pts,.025,gold)
+label("Hold sign","DELIVERY STORES",(0,-6.895,2.75),(pi/2,0,pi),.16,cream)
+bw,bh,bc=airframe_profile(-12);bw-=.09;bh-=.09;bp=airframe_power(-12)
+start=asin(airframe_signed_power(-bc/bh,bp/2))
+outline=[(bw*airframe_signed_power(cos(start+(pi-2*start)*i/64),2/bp),bc+bh*airframe_signed_power(sin(start+(pi-2*start)*i/64),2/bp)) for i in range(65)]
+loft("Windowless curved aft bulkhead",[[(x,y,z) for x,z in outline] for y in (-12.06,-11.92)],pine)
+label("Rear plate","NORTH STAR / CARGO",(0,-11.90,2.35),(pi/2,0,pi),.19,cream)
 group("06 Coachwork")
-for s in (-1,1):
-    line("Gilt prow sweep",[(s*2.97,6.85,.74),(s*2.52,8.12,.63),(s*1.64,9.78,.38),(s*.47,10.54,.29),(s*.09,10.68,.27)],.042,gold)
-    for y in (-5.8,-3.9,1.8,4.75):
-        box("Riveted field patch",(s*3.074,y,1.036),(.017,.47,.20),berry,.012)
-        for yy in (-.19,.19):
-            for z in (.976,1.097):rod("Patch fastener",(s*3.077,y+yy,z),(s*3.10,y+yy,z),.016,gold,8)
-        for i in range(5):
-            ly=y+rng.uniform(-.18,.12)
-            z=rng.uniform(.95,1.10)
-            line("Enamel wear",[(s*3.086,ly,z),(s*3.086,ly+rng.uniform(.016,.09),z+.008)],.0028,cream)
+
+group("05 Raised pilot deck and stairs")
+# The pilot floor is continuous; the gunner enters below it from the cabin.
+pilot_deck=box("Raised pilot carpet deck",(0,8.9,1.45),(9.6,6.6,.20),carpet,.006)
+envelope=loft("Temporary cockpit fitting envelope",[airframe_ring(st,.075) for st in airframe_stations],pine)
+bpy.context.view_layer.objects.active=pilot_deck
+for modifier in list(pilot_deck.modifiers):bpy.ops.object.modifier_apply(modifier=modifier.name)
+modifier=pilot_deck.modifiers.new("Fit pilot floor inside nose","BOOLEAN")
+modifier.operation="INTERSECT";modifier.object=envelope;modifier.solver="MANIFOLD"
+bpy.ops.object.modifier_apply(modifier=modifier.name)
+carpet_uv(pilot_deck)
+assert pilot_deck.data.polygons,"Cockpit fitting removed the deck"
+assert all(abs(v.co.x)<airframe_surface_x(v.co.y,v.co.z)-.03 for v in pilot_deck.data.vertices),"Pilot floor penetrates the nose"
+bpy.data.objects.remove(envelope,do_unlink=True)
+for i in range(9):
+    y=2.5+(i+.5)*3.1/9;h=(i+1)*1.55/9
+    box("Pilot stair riser",(0,y,h/2),(1.9,3.1/9,h),pine,.012)
+    carpet_uv(box("Pilot stair tread",(0,y,h+.003),(1.84,3.1/9-.012,.006),runner,.003))
+    box("Pilot stair brass nosing",(0,y-3.1/18+.022,h+.012),(1.86,.03,.02),gold,.008)
+for side in (-1,1):
+    line("Stair handrail",[(side*1.04,2.5,.82),(side*1.04,5.6,2.37)],.035,gold)
+    for y,z in [(2.5,.82),(5.6,2.37)]:rod("Stair rail post",(side*1.04,y,z-.82),(side*1.04,y,z),.035,pine)
+# Gunner hatch aperture in the vertical face beside the stairs: x 1.28..2.52.
+box("Pilot platform left fascia",(-.985,5.64,.775),(4.53,.08,1.55),pine,.018)
+box("Pilot platform right fascia",(2.885,5.64,.775),(.73,.08,1.55),pine,.018)
+box("Gunner hatch lintel",(1.9,5.64,1.48),(1.24,.08,.14),pine,.018)
+box("Gunner hatch sill",(1.9,5.64,.055),(1.24,.08,.11),pine,.018)
+exec(compile((HERE/"cockpit_finish.py").read_text(),str(HERE/"cockpit_finish.py"),"exec"),globals())

@@ -1,6 +1,26 @@
 extends CanvasLayer
 
-const HELP := "Work together to deliver presents down chimneys. Green beams mark nice houses (+10); red beams mark naughty houses (-5). Only presents score.\n\nWALKING\nWASD — Move   •   Space — Jump   •   Hold Ctrl — Crouch\nE — Pick up cargo you look at, or take/leave the nearby helm\nHold left mouse — Charge; release — Throw\nG — Drop held cargo\n\nAT THE HELM\nW/S — Throttle   •   A/D — Turn\nSpace — Climb   •   Shift — Dive   •   E — Leave helm\n\nEscape — Open/close menu. The online game continues."
+const HELP := """NORTH STAR MK II
+Collect presents and bombs from the rear stores with E. Carry them to the loading end of either return track and press E. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
+
+With empty hands, aim at any queued item and press E to retrieve it. Reload it at the loading end to move it to the back. Full or cycling tracks keep your held item safe.
+
+DELIVERY CONSOLE
+Aim at the port-side console ahead of the tracks and press E with empty hands. Both cargo launchers are controlled here: 1 selects LEFT, 2 selects RIGHT, and Space releases one item. The green circle and center crosshair predict the selected cargo landing after the 0.45-second release delay, assuming current flight inputs continue. Cargo is never guided. Q leaves the station.
+
+VENTRAL TURRET
+Click the BELLY GUN hatch to the right of the cockpit stairs with empty hands to climb into the glass pod. Ctrl returns you to the cabin beside the stairs. Mouse aims, left click fires a snowball, and holding right mouse lets you look around without moving the guns. The turret rotates through 360 degrees; shots into the aircraft are blocked. Snowballs create cosmetic impacts only. A teammate can operate delivery independently.
+
+FLIGHT AND DELIVERY
+Walk up the cockpit steps; E at the helm enters/leaves. W/S throttle (hold S to brake), A/D turn, Space climb/take off at 18 m/s, Shift descend. V toggles cockpit/chase view; right-drag orbits the chase camera.
+Presents: nice house +10, precise nice chimney +15 total; naughty house −5. Bombs destroy only the house directly hit and add no score.
+
+WALKING
+WASD move • Space jump • Ctrl crouch • E interact
+Hold/release left mouse to throw held cargo • G drop
+E operates the outside boarding door from either side. The rear emergency exit tears off when released and restores next level.
+
+Escape opens the menu. Online play continues; your gameplay input is suppressed. Q leaves the delivery console; Ctrl leaves the turret."""
 var root: Control
 var box: VBoxContainer
 var status: Label
@@ -12,6 +32,7 @@ var menu_revision := 0
 var dialog: ConfirmationDialog
 var display_deadline := 0
 var display_dialog: ConfirmationDialog
+var number_fields := {}
 
 func _ready() -> void:
 	layer = 20
@@ -281,15 +302,34 @@ func toggle(title: String, key: String) -> void:
 
 func number(title: String, key: String, minimum: float, maximum: float, step: float) -> void:
 	label(title)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	box.add_child(row)
+	var slider := HSlider.new()
+	slider.name = key + "Slider"
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider.min_value = minimum
+	slider.max_value = maximum
+	slider.step = step
+	slider.value = draft[key]
+	slider.tooltip_text = title
+	row.add_child(slider)
 	var node := SpinBox.new()
+	node.name = key + "Value"
+	node.custom_minimum_size.x = 110
 	node.min_value = minimum
 	node.max_value = maximum
 	node.step = step
 	node.value = draft[key]
+	node.tooltip_text = title
+	slider.share(node)
 	node.value_changed.connect(func(value: float): draft[key] = int(value) if key == "fps" else value)
-	box.add_child(node)
+	row.add_child(node)
+	number_fields[key] = node
 
 func build_options(reset: bool = false) -> void:
+	number_fields.clear()
 	draft = Game.DEFAULTS.duplicate() if reset else Game.values.duplicate()
 	label("OPTIONS", 28)
 	choice("Window mode", "mode", ["Windowed", "Borderless", "Fullscreen"])
@@ -297,7 +337,7 @@ func build_options(reset: bool = false) -> void:
 	toggle("VSync", "vsync")
 	number("Frame limit (0 = unlimited)", "fps", 0, 360, 1)
 	number("Field of view", "fov", 60, 110, 1)
-	number("Master volume (%)", "volume", 0, 100, 5)
+	number("Master volume (%)", "volume", 0, 100, 1)
 	number("Mouse sensitivity", "sensitivity", 0.2, 3, 0.1)
 	toggle("Invert vertical look", "invert")
 	label("Controls: WASD · Space · Shift · E · G · Left mouse\nSee How to Play for walking and helm controls.")
@@ -313,6 +353,9 @@ func build_options(reset: bool = false) -> void:
 	button("Cancel / Back", func(): show_page(return_page))
 
 func apply_options() -> void:
+	# Commit text even when Apply is activated before the field loses focus.
+	for field in number_fields.values():
+		field.apply()
 	previous = Game.values.duplicate()
 	Game.values = draft.duplicate()
 	Game.apply_settings()

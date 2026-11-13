@@ -27,7 +27,7 @@ func _ready() -> void:
 	shape.size = Vector3(2,.15,2)
 	collider.shape = shape
 	ceiling.add_child(collider)
-	world.bomber.add_child(ceiling)
+	world.add_child(ceiling)
 	ceiling.position = elf.position + Vector3(0,1.5,0)
 	for i in range(3): await get_tree().physics_frame
 	Input.action_release("crouch")
@@ -40,22 +40,13 @@ func _ready() -> void:
 	for i in range(4): await get_tree().physics_frame
 	assert(not elf.crouched)
 	main.ui.resume_game()
-	elf.position = Vector3(0,.05,0)
+	elf.global_position = world.bomber.to_global(Vector3(0,.05,0))
 	elf.rotation.y = 0
 	elf.set_physics_process(false)
 	world.set_physics_process(false)
-	# Both sleigh ladder directions must survive the character integration.
-	var interact := InputEventAction.new()
-	interact.action = "interact"
-	interact.pressed = true
-	elf.position = Vector3(1.14, .03, -.83)
-	assert(elf.at_ladder())
-	elf._unhandled_input(interact)
-	assert(elf.position.is_equal_approx(Vector3(.55, 2.19, -2.80)))
-	assert(elf.at_ladder())
-	elf._unhandled_input(interact)
-	assert(elf.position.is_equal_approx(Vector3(1.14, .03, -.83)))
-	elf.position = Vector3(0, .05, 0)
+	# The obsolete dorsal station is removed; occupied belly access is tested in mk2_smoke.
+	assert(not elf.has_method("at_ladder"))
+	elf.global_position = world.bomber.to_global(Vector3(0, .05, 0))
 	elf.carry(1)
 	await get_tree().create_timer(.5).timeout
 	await snap("hands_present")
