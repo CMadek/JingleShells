@@ -196,13 +196,24 @@ func carry(kind: int) -> void:
 		presentation.trigger("pickup")
 
 
+func keep_upright(yaw_delta: float = 0.0) -> void:
+	# Work at the character root, leaving head pitch and animated bone poses alone.
+	var yaw := atan2(global_basis.z.x, global_basis.z.z) + yaw_delta
+	global_basis = Basis(Vector3.UP, yaw)
+
+
 func _physics_process(delta: float) -> void:
+	var station: String = world.stations.station_for(peer_id)
+	if station != "turret":
+		keep_upright()
 	head.position.y = lerpf(head.position.y, 1.0 if crouched else 1.6, 1.0 - exp(-camera_smoothing * delta))
 	if not is_multiplayer_authority():
 		capsule_node.shape.height = Crouch.DUCKED if crouched else Crouch.STANDING
 		capsule_node.position.y = capsule_node.shape.height / 2.0
-		position = position.lerp(net_pos, 0.35)
-		rotation.y = lerp_angle(rotation.y, net_yaw, 0.35)
+		# Turret transforms come from the replicated gimbal, not walking snapshots.
+		if station != "turret":
+			position = position.lerp(net_pos, 0.35)
+			global_basis = Basis(Vector3.UP, lerp_angle(rotation.y, net_yaw, 0.35))
 		head.rotation.x = net_pitch
 		return
 

@@ -44,6 +44,11 @@ const ROLL_RATE := deg_to_rad(15.0)
 const TURN_FACTOR := 0.6            # scales the coordinated-turn rate
 const STALL_NOSE_DROP := deg_to_rad(40.0)
 const STALL_SINK := 12.0
+const UNATTENDED_GRACE := 3.0
+const RETURN_THROTTLE_RATE := .22
+const RETURN_LEVEL_RATE := deg_to_rad(12.0)
+const RETURN_GLIDE_PITCH := deg_to_rad(-6.0)
+var unattended_seconds := 0.0
 
 
 
@@ -175,8 +180,18 @@ func _build_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.8
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(.55,.60,.70)
+	env.ambient_light_sky_contribution = .15
+	env.ambient_light_energy = .45
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.ssao_enabled = true
+	env.ssao_radius = .6
+	env.ssao_intensity = 1.15
+	env.ssao_light_affect = .2
+	env.glow_enabled = true
+	env.glow_intensity = .22
+	env.glow_bloom = .02
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.2, 0.25, 0.45)
 	env.fog_density = 0.0012
@@ -196,7 +211,9 @@ func _build_environment() -> void:
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(6000, 6000)
 	ground.mesh = pm
-	ground.material_override = _mat(Color(0.9, 0.93, 1.0))
+	var snow := ShaderMaterial.new()
+	snow.shader = preload("res://assets/materials/snow.gdshader")
+	ground.material_override = snow
 	add_child(ground)
 	var terrain := StaticBody3D.new()
 	var floor_shape := CollisionShape3D.new()
@@ -315,7 +332,7 @@ func _build_bomber() -> void:
 	_hull_box(hull,Vector3(1.5,1.5,.12),Vector3(1.9,.75,-5.64))
 	_hull_box(hull, Vector3(2.49,1.1,.83), Vector3(0,2.10,-8.63))
 	supply_points = preload("res://cargo_shelves.gd").build(self,hull)
-	# Elves ride by parenting. Cargo needs a moving surface with physics velocity.
+	# Crew ride in world space. Cargo needs a moving surface with physics velocity.
 	hull.collision_layer = 16
 	if multiplayer.is_server():
 		moving_hull = AnimatableBody3D.new()
@@ -348,29 +365,7 @@ func _build_bomber() -> void:
 	stations.build(self)
 	previous_plane = bomber.transform
 
-	var lamp := OmniLight3D.new()
-	lamp.position = Vector3(0, 2.2, 0)
-	lamp.light_color = Color(1, 0.85, 0.6)
-	lamp.omni_range = 14.0
-	bomber.add_child(lamp)
-	var chart_light := OmniLight3D.new()
-	chart_light.position = Vector3(0, 4.2, -7.2)
-	chart_light.light_color = Color(1.0, .81, .55)
-	chart_light.light_energy = 1.4
-	chart_light.omni_range = 4.0
-	bomber.add_child(chart_light)
-	var hold_light := OmniLight3D.new()
-	hold_light.position = Vector3(0,2.5,9.5)
-	hold_light.light_color = Color(1,.80,.55)
-	hold_light.light_energy = 1.5
-	hold_light.omni_range = 6
-	bomber.add_child(hold_light)
-	var gunner_light := OmniLight3D.new()
-	gunner_light.position = Vector3(1.75,-.72,-7.3)
-	gunner_light.light_color = Color(1,.84,.60)
-	gunner_light.light_energy = .65
-	gunner_light.omni_range = 2.6
-	bomber.add_child(gunner_light)
+	preload("res://assets/aircraft/cabin_finish.gd").apply(bomber, airframe)
 
 
 func _build_hud() -> void:
@@ -559,7 +554,15 @@ func _physics_process(delta: float) -> void:
 func flight_state() -> Dictionary:
 	return {"position":bomber.position,"heading":heading,"pitch":pitch,"roll":roll,
 		"speed":speed,"throttle":throttle,"grounded":grounded,"phase":phase,
-		"in_steer":in_steer,"in_throttle":in_throttle,"in_climb":in_climb}
+		"in_steer":in_steer,"in_throttle":in_throttle,"in_climb":in_climb,
+		"crew_aboard":has_crew_aboard(),"unattended_seconds":unattended_seconds}
+
+func has_crew_aboard() -> bool:
+	for id in players:
+		# A seated belly gunner is below the walkable cabin's bounds.
+		if aboard(players[id].global_position) or stations.station_for(id) != "":
+			return true
+	return false
 
 func flight_pose(state: Dictionary) -> Transform3D:
 	return Transform3D(Basis.from_euler(Vector3(state.pitch,state.heading,-state.roll),EULER_ORDER_YXZ),state.position)
@@ -588,23 +591,36 @@ func _fly(delta: float) -> void:
 	throttle = state.throttle
 	grounded = state.grounded
 	phase = state.phase
+	unattended_seconds = state.unattended_seconds
+	if unattended_seconds >= UNATTENDED_GRACE and not state.crew_aboard and pilot_id != 0:
+		set_pilot.rpc(0)
 	_apply_attitude()
 	recover_outside_world()
 
 func advance_flight(state: Dictionary, delta: float) -> void:
 	# Pure simulation step shared by the host and delayed-release forecast.
-	# Throttle is a lever: it stays where you leave it.
-	state.throttle = clampf(state.throttle + state.in_throttle * THROTTLE_RATE * delta, MIN_THROTTLE, 1.0)
+	# Stepping away from the helm keeps cruise available to crew still aboard.
+	# An entirely empty aircraft instead glides down, so a fallen crew can recover it.
+	var moving: bool = not state.grounded or state.speed > .1 or state.throttle > .01
+	state.unattended_seconds = 0.0 if state.crew_aboard or not moving else state.unattended_seconds + delta
+	var returning: bool = state.unattended_seconds >= UNATTENDED_GRACE
+	if returning:
+		state.in_steer = 0.0
+		state.in_throttle = 0.0
+		state.in_climb = 0.0
+		state.throttle = move_toward(state.throttle, 0.0, RETURN_THROTTLE_RATE * delta)
+	else:
+		state.throttle = clampf(state.throttle + state.in_throttle * THROTTLE_RATE * delta, MIN_THROTTLE, 1.0)
 
 	if state.grounded:
 		state.pitch = 0
 		state.roll = 0
-		state.speed = clampf(state.speed + (MAX_THRUST*state.throttle - DRAG*state.speed*state.speed - (10.0 if state.in_throttle < 0 else 1.0))*delta,0,MAX_SPEED)
+		state.speed = clampf(state.speed + (MAX_THRUST*state.throttle - DRAG*state.speed*state.speed - (10.0 if returning or state.in_throttle < 0 else 1.0))*delta,0,MAX_SPEED)
 		state.heading -= state.in_steer * .42 * minf(state.speed / 5.0, 1.0) * delta
 		state.position += Vector3(-sin(state.heading),0,-cos(state.heading))*state.speed*delta
 		state.position.y = MIN_ALTITUDE
 		state.phase = "TAXI / TAKEOFF" if state.speed > .1 else "PREPARATION"
-		if state.in_climb > 0 and state.speed >= 18:
+		if not returning and state.in_climb > 0 and state.speed >= 18:
 			state.grounded = false
 			state.pitch = .12
 			state.phase = "IN FLIGHT"
@@ -620,7 +636,9 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 
 	# Pitch: stick commands a rate. With no input the nose eases back to level
 	# (this is also the "autopilot" when nobody is at the helm).
-	if absf(state.in_climb) > 0.01:
+	if returning:
+		state.pitch = move_toward(state.pitch, RETURN_GLIDE_PITCH, RETURN_LEVEL_RATE * delta)
+	elif absf(state.in_climb) > 0.01:
 		state.pitch += state.in_climb * PITCH_RATE * authority * maxf(lift, 0.3) * delta
 	else:
 		state.pitch = move_toward(state.pitch, 0.0, LEVEL_RATE * delta)
@@ -641,6 +659,7 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 	vel.y -= (1.0 - lift) * STALL_SINK
 	vel.y -= (1.0 - cos(state.roll)) * 4.0   # lift lost to bank
 	state.position += vel * delta
+	if returning: state.phase = "UNATTENDED / GLIDING DOWN"
 
 	# Altitude limits: ground/ceiling push the nose back toward level.
 	if state.position.y < MIN_ALTITUDE:
@@ -1019,14 +1038,18 @@ func at_airfield(point: Vector3) -> bool:
 	return absf(point.x) < 65 and point.z > -300 and point.z < 920
 
 func carry_crew(old: Transform3D) -> void:
+	var yaw_delta := angle_difference(atan2(old.basis.z.x, old.basis.z.z), atan2(bomber.global_basis.z.x, bomber.global_basis.z.z))
 	for elf in players.values():
 		var local: Vector3 = old.affine_inverse()*elf.global_position
 		if CABIN_BOUNDS.has_point(local):
-			elf.global_transform = bomber.transform * old.affine_inverse() * elf.global_transform
-			var yaw_delta := angle_difference(old.basis.get_euler().y, bomber.rotation.y)
+			elf.global_position = bomber.global_transform * local
+			# Rotate a walking crew member's heading only; never bank their capsule
+			# or accumulate pitch/roll in the visual hierarchy. The gimbal owns seats.
+			if stations.station_for(elf.peer_id) != "turret":
+				elf.keep_upright(yaw_delta)
 			if not elf.is_multiplayer_authority():
-				elf.net_pos = bomber.transform*(old.affine_inverse()*elf.net_pos)
-				elf.net_yaw += yaw_delta
+				elf.net_pos = bomber.global_transform*(old.affine_inverse()*elf.net_pos)
+				elf.net_yaw = wrapf(elf.net_yaw + yaw_delta, -PI, PI)
 
 func recover_outside_world() -> void:
 	if not bomber.position.is_finite() or absf(bomber.position.x) > 2900 or absf(bomber.position.z) > 2900:
@@ -1047,6 +1070,7 @@ func begin_level() -> void:
 	roll = 0
 	speed = 0
 	throttle = 0
+	unattended_seconds = 0
 	grounded = true
 	phase = "PREPARATION"
 	_apply_attitude()

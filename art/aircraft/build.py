@@ -1,10 +1,12 @@
 """Build the North Star in Blender. Local +Y points toward the nose."""
 from pathlib import Path
 from math import sin, cos, pi
-import bpy, bmesh, random, traceback
+import bpy, bmesh, random, traceback, sys
 from mathutils import Vector
 
 HERE=Path(__file__).resolve().parent
+sys.path.insert(0,str(HERE.parent))
+import material_library as surfaces
 OUT=HERE.parents[1]/"assets"/"aircraft"
 scene=bpy.data.scenes.new("North Star")
 bpy.context.window.scene=scene
@@ -20,11 +22,11 @@ def mat(name,c,metal=0,rough=.53,glow=0):
     p=m.node_tree.nodes.get("Principled BSDF")
     for k,v in [("Base Color",(*c,1)),("Metallic",metal),("Roughness",rough),("Emission Color",(*c,1)),("Emission Strength",glow)]: p.inputs[k].default_value=v
     return m
-red=mat("Cranberry enamel",(.40,.026,.043),.32)
-berry=mat("Oxide red",(.28,.019,.032),.32)
-pine=mat("Spruce lacquer",(.023,.113,.091),.36)
-gold=mat("Old brass",(.67,.385,.101),.59)
-cream=mat("Ivory sign paint",(.91,.80,.56))
+red=mat("Cranberry enamel",surfaces.PALETTE["cranberry"],.12,.38)
+berry=mat("Oxide red",(.22,.023,.035),.10,.48)
+pine=mat("Spruce lacquer",surfaces.PALETTE["spruce"],.14,.43)
+gold=mat("Old brass",surfaces.PALETTE["brass"],.72,.34)
+cream=mat("Ivory sign paint",surfaces.PALETTE["cream"],.03,.48)
 iron=mat("Parkerized iron",(.035,.045,.048),.57)
 wood=[mat("Oiled fir %d"%i,(.27+i*.026,.128+i*.014,.053+i*.006)) for i in range(4)]
 warm=mat("Honey lamp glass",(1,.56,.20),0,.4,3)
@@ -44,7 +46,7 @@ def obj(name,vs,faces,m,bevel=0):
     if bevel:
         mod=o.modifiers.new("Rolled edges","BEVEL")
         mod.width=bevel
-        mod.segments=2
+        mod.segments=3
         o.modifiers.new("Face normals","WEIGHTED_NORMAL")
     return o
 def box(name,c,d,m,b=.018):
@@ -62,7 +64,10 @@ def rod(name,a,b,r,m,n=12):
     axis=(b-a).normalized()
     u=axis.cross(Vector((0,0,1)) if abs(axis.z)<.9 else Vector((1,0,0))).normalized()
     v=axis.cross(u)
-    return loft(name,[[p+r*(u*cos(i*2*pi/n)+v*sin(i*2*pi/n)) for i in range(n)] for p in [a,b]],m)
+    o=loft(name,[[p+r*(u*cos(i*2*pi/n)+v*sin(i*2*pi/n)) for i in range(n)] for p in [a,b]],m)
+    for f in o.data.polygons:
+        if len(f.vertices)==4:f.use_smooth=True
+    return o
 def line(name,pts,r,m):
     c=bpy.data.curves.new(name,"CURVE")
     c.dimensions="3D"
@@ -109,7 +114,7 @@ exec(compile((HERE/"rounded.py").read_text(),str(HERE/"rounded.py"),"exec"),glob
 def stages():
     hull()
     yield
-    for name in ["cabin","mk2","interior_details","access","collision","export"]:
+    for name in ["cabin","mk2","interior_details","access","polish","collision","export"]:
         path=HERE/(name+".py")
         while not path.is_file():
             yield

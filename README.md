@@ -1,4 +1,4 @@
-# Jingle Bells
+# Jingle Shells
 
 Co-op first-person Godot 4 game: you and your friends are elves crewing a Christmas bomber.
 One elf flies, another delivers presents by hitting houses. Green beams = nice kids (+10).
@@ -25,6 +25,8 @@ Aim at the boarding door or its brass switch and press E from either side. The c
 At the helm: W raises throttle, S lowers it and applies ground brakes, A/D steers, Space raises the nose, and Shift lowers it. Reach 18 m/s and hold Space to take off. The boarding door stays under crew control: open, close, or reverse it with E at any speed, including in flight. Obstructions display a prompt. Touchdown levels the sleigh on its runners; hold S to stop. The original airborne flight model, animated instruments, V camera toggle, and chase orbit are retained. Flat-ground landing is arcade-style, without a crash/damage simulation. Low flight no longer causes the altitude clamp; out-of-world travel resets preparation.
 
 The runway is 1,200 m long and 52 m wide, clear of the village, with threshold markings and edge lights. Local checks measured about 43 m to lift off starting with an open door (including automatic closure) and 67 m to stop from the 45 m/s maximum. Approach speed and throttle affect stopping distance.
+
+If everyone leaves a moving aircraft for more than three seconds, the host gradually reduces throttle, levels into a descending glide, and brakes after touchdown. This clears a fallen pilot's helm claim and prevents an abandoned powered climb from continuing indefinitely. Any crew member still in the cabin or an occupied belly station keeps normal cruise active; reboarding cancels recovery. This uses the existing arcade stall/sink model and does not add a rigid-body aircraft simulation. Boarding stairs still stay at the depot, so an off-runway boarding aid would be a separate feature. `tests/flight_recovery_smoke.tscn` covers recovery, grace, crew/station occupancy, braking, and reset; delayed cargo prediction still shares the same flight step.
 
 World.begin_level() is the host hook for future mission progression: it clears cargo and resets the aircraft and crew to preparation. It is not connected to an automatic next-mission trigger. Joining players start in the depot. Protocol 4 requires matching builds.
 
@@ -165,3 +167,13 @@ The cabin has fitted spruce carpet with a cranberry aisle runner and brass passa
 The cargo console operates both launchers: **1** selects left, **2** selects right, **Space** releases, and **Q** exits. Its view follows the selected ballistic impact, showing a large green impact circle with a central crosshair. The rear aisle is continuous; load either rack from the inboard trays. The belly turret uses a smooth transparent glass sphere. Parked, taxi and landing height share the same clearance datum.
 
 Targeting uses the actual chute release point (0.45 seconds into its 0.8-second cycle), forecasting the aircraft with the same flight integrator used by the host. A reserved release uses its remaining opening time. Pilot control changes during the delay can change the landing point. `tests/release_prediction_smoke.tscn` checks real delayed drops on both racks under level flight, steering, climb and descent.
+
+## Christmas art polish
+
+The North Star and flight crew share cranberry, spruce, warm cream and aged brass finishes. The cabin has a fitted wool headliner, padded wall panels, embroidered carpet, leather handrails and framed cockpit panels. Cargo shelves are authored in Blender at their existing pickup coordinates. Warm shadowed spotlights and soft fill lights complement the cold outdoor light; glass remains clear for targeting.
+
+The elves have sculpted faces, inset eyes, curved ears, goggles, tailored coats, knitted accessories, stitched mittens and rounded boots. Their existing bones, 15 animation clips, carry socket, three coat colors and first-person hands remain supported. Export batches each body into 13 material meshes. Walking crew now receive the aircraft's translation and yaw without accumulating its pitch/roll. Turret operators retain their seat's gimbal orientation.
+
+The menu artwork, window title, lobby name and player-facing text use **Jingle Shells**. Settings still load from the old title's data directory if the new directory has no settings yet; the internal multiplayer protocol identifier is unchanged.
+
+See [art direction, build instructions and validation](art/CHRISTMAS_POLISH.md). Checked game previews are in `art/aircraft/mk2/previews/cozy/`.

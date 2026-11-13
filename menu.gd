@@ -134,7 +134,7 @@ func show_page(next: String, message: String = "") -> void:
 	panel.add_child(box)
 	if page == "main":
 		var logo := TextureRect.new()
-		logo.texture = preload("res://assets/ui/jingle-bells-logo.png")
+		logo.texture = preload("res://assets/ui/jingle-shells-logo.png")
 		logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		logo.custom_minimum_size = Vector2(0, 245)
@@ -195,7 +195,7 @@ func show_page(next: String, message: String = "") -> void:
 		label(HELP)
 		back()
 	elif page == "credits":
-		label("JINGLE BELLS", 28)
+		label("JINGLE SHELLS", 28)
 		label("By Synk Studios & Memceco\n\nA cooperative Christmas aviation game.\nBuilt with Godot. Multiplayer powered by GodotSteam / Steam.")
 		back()
 	status = label(message)
@@ -263,7 +263,7 @@ func confirm(text: String, callback: Callable) -> void:
 	if not root.visible:
 		show_page("pause")
 	dialog = ConfirmationDialog.new()
-	dialog.title = "Jingle Bells"
+	dialog.title = "Jingle Shells"
 	dialog.dialog_text = text
 	dialog.theme = root.theme
 	root.add_child(dialog)

@@ -2,6 +2,9 @@ extends Node3D
 ## Visual-only character state. Inventory and cargo remain controlled by World.
 const BODY = preload("res://assets/elf/flight_elf.glb")
 const ARMS = preload("res://assets/elf/first_person_arms.glb")
+const COAT_SHADER = preload("res://assets/elf/coat_palette.gdshader")
+const COAT_MASK = preload("res://assets/elf/textures/crew_coat_tint.png")
+const HANDS_COAT_MASK = preload("res://assets/elf/textures/hands_coat_tint.png")
 var actor: CharacterBody3D
 var model: Node3D
 var hands: Node3D
@@ -41,19 +44,22 @@ func setup(player: CharacterBody3D) -> void:
 		attachment.add_child(socket)
 	apply_palette(model)
 	if hands:
-		apply_palette(hands)
+		apply_palette(hands, true)
 	last_position = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position)
 
-func apply_palette(node: Node) -> void:
+func apply_palette(node: Node, first_person := false) -> void:
 	if node is MeshInstance3D:
 		for surface in node.mesh.get_surface_count():
 			var material = node.get_active_material(surface)
 			if material and material.resource_name == "Coat":
-				var copy = material.duplicate()
-				copy.albedo_color = [Color("254e38"), Color("78323d"), Color("354d65")][actor.peer_id % 3]
+				var copy := ShaderMaterial.new()
+				copy.shader = COAT_SHADER
+				copy.set_shader_parameter("surface_color", material.albedo_texture)
+				copy.set_shader_parameter("coat_mask", HANDS_COAT_MASK if first_person else COAT_MASK)
+				copy.set_shader_parameter("coat_color", [Color("254e38"), Color("78323d"), Color("354d65")][actor.peer_id % 3])
 				node.set_surface_override_material(surface, copy)
 	for child in node.get_children():
-		apply_palette(child)
+		apply_palette(child, first_person)
 
 func trigger(next: String) -> void:
 	if next == "charge":

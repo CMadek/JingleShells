@@ -13,7 +13,11 @@ func _ready() -> void:
 		var result: Dictionary = steam.steamInitEx(480, true)
 		steam_ready = int(result.get("status", -1)) == 0 and ClassDB.class_exists("SteamMultiplayerPeer")
 	var config := ConfigFile.new()
-	if config.load("user://settings.cfg") == OK:
+	var settings_error := config.load("user://settings.cfg")
+	if settings_error == ERR_FILE_NOT_FOUND:
+		# One-time compatibility with the old title's sibling Godot data directory.
+		settings_error = config.load(OS.get_user_data_dir().get_base_dir().path_join("Jingle Bells/settings.cfg"))
+	if settings_error == OK:
 		for key in DEFAULTS:
 			var value = config.get_value("settings", key, DEFAULTS[key])
 			if typeof(value) == typeof(DEFAULTS[key]):

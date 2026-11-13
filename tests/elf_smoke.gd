@@ -2,7 +2,7 @@ extends Node
 func snap(name: String) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	await get_tree().process_frame
+	for i in 8: await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("res://art/elf/" + name + ".png")
 func _ready() -> void:
@@ -44,6 +44,8 @@ func _ready() -> void:
 	elf.rotation.y = 0
 	elf.set_physics_process(false)
 	world.set_physics_process(false)
+	# Inspect hands and clothing without world-space signs crossing the camera.
+	for label in world.find_children("*", "Label3D", true, false):label.hide()
 	# The obsolete dorsal station is removed; occupied belly access is tested in mk2_smoke.
 	assert(not elf.has_method("at_ladder"))
 	elf.global_position = world.bomber.to_global(Vector3(0, .05, 0))
