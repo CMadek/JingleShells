@@ -18,6 +18,21 @@ func _ready() -> void:
 	check(background.viewport.gui_disable_input, "Background must not receive menu input")
 	check(main.get_node_or_null("World") == null, "Menu must not start gameplay")
 	check(background.stage.actors.size() == 3, "Three crew members are staged")
+	for i in background.stage.actors.size():
+		var props := {"Candy cane":0, "Cocoa":0}
+		for mesh in background.stage.actors[i].find_children("*", "MeshInstance3D", true, false):
+			for surface in mesh.mesh.get_surface_count():
+				var material: Material = mesh.get_active_material(surface)
+				check(not material.resource_name.begins_with("Cigarette"), "Cigarettes must be removed from the exported crew")
+				if mesh.visible:
+					for prefix in props:
+						if material.resource_name.begins_with(prefix): props[prefix] += 1
+		check((props["Cocoa"] > 0) == (i == 0), "Only the right elf carries the cocoa mug")
+		check((props["Candy cane"] > 0) == (i == 1), "Only the seated elf has a candy cane")
+	var steam = background.find_children("CocoaSteam", "CPUParticles3D", true, false)
+	check(steam.size() == 1, "Only the mug emits steam")
+	if steam.size() == 1:
+		check(steam[0].get_parent().bone_name == "MugSteam", "Steam must follow the mug instead of the mouth")
 	check(background.stage.faces.size() == 3, "Each crew member has a distinct expression")
 	for face in background.stage.faces:
 		check(not face.targets.is_empty(), "Corrective blink shapes must survive Blender export: " + face.expression)
@@ -62,7 +77,7 @@ func _ready() -> void:
 			check((incoming+outgoing).length() < .004, "Smooth angular motion across " + clip + "/" + skeleton.get_bone_name(bone))
 		animation_player.play(clip)
 	# Demand visible acting, so the menu cannot regress to barely moving idles.
-	for spec in [[1,"ShinL",1.0,3.0,.7], [2,"ForearmL",1.0,5.0,.4]]:
+	for spec in [[1,"ShinL",1.0,3.0,.7], [0,"Mug",0.0,3.0,.20]]:
 		var animation_player: AnimationPlayer = background.stage.animations[spec[0]]
 		var skeleton: Skeleton3D = animation_player.get_parent().find_children("*", "Skeleton3D", true, false)[0]
 		var bone := skeleton.find_bone(spec[1])
@@ -70,6 +85,17 @@ func _ready() -> void:
 		var first := skeleton.get_bone_pose_rotation(bone)
 		animation_player.seek(spec[3],true)
 		check(first.angle_to(skeleton.get_bone_pose_rotation(bone)) > spec[4], "Visible movement survives export: " + spec[1])
+	# Measure what the viewer sees: the watch rises towards the face. Its height
+	# depends on both the shoulder and the elbow, not the local elbow angle alone.
+	var watch_player: AnimationPlayer = background.stage.animations[2]
+	var watch_rig: Skeleton3D = watch_player.get_parent().find_children("*", "Skeleton3D", true, false)[0]
+	var wrist := watch_rig.find_bone("ForearmL")
+	var bezel := watch_rig.get_bone_global_rest(wrist).affine_inverse() * Vector3(-.44,.805,.14)
+	watch_player.seek(1.0,true)
+	var lowered := watch_rig.get_bone_global_pose(wrist) * bezel
+	watch_player.seek(5.0,true)
+	var raised := watch_rig.get_bone_global_pose(wrist) * bezel
+	check(raised.y - lowered.y > .18 and raised.distance_to(lowered) > .30, "Watch rises visibly towards the face")
 	for face in background.stage.faces:
 		face.player.pause()
 		face.player.seek(fposmod(2.3-face.offset,24),true)

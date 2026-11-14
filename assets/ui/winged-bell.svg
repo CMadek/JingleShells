@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 54" width="96" height="54">
+  <g fill="#e4b35c">
+    <path id="wing" d="M2 6c10 6 20 6 29 9 6 2 9 6 10 11-5-4-11-6-18-7C13 17 5 13 2 6zm6 12c7 4 14 4 20 6 4 1 7 3 9 6-7-3-13-3-19-5-5-1-8-4-10-7zm10 11c8 2 13 2 18 5-8 1-14 0-18-5z"/>
+    <use href="#wing" transform="translate(96 0) scale(-1 1)"/>
+    <circle cx="48" cy="9" r="3.4"/>
+    <path d="M35 37c4-4 4-9 5-15 1-5 4-8 8-8s7 3 8 8c1 6 1 11 5 15l2 3H33zM44 43h8c0 6-8 6-8 0z"/>
+  </g>
+</svg>

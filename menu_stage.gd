@@ -32,7 +32,7 @@ func _ready() -> void:
 	_omni(plane, Vector3(0, 3.5, -7.4), Color("ffd09a"), .7, 7.0)
 	_omni(plane, Vector3(0, 3.0, 1), Color("ffce8a"), .8, 8.0)
 	_build_set()
-	_crew(Vector3(6.25, 0, -7.9), 2.0, "menu_smoke", Color("28472f"), 1.0)
+	_crew(Vector3(6.25, 0, -7.9), 2.0, "menu_cocoa", Color("28472f"), 1.0)
 	_crate(Vector3(7.9, .23, -7.3), Vector3(.95, .46, .8), .12)
 	_crew(Vector3(7.884, 0, -7.57), 3.2, "menu_sit", Color("693034"), 6.0)
 	_crate(Vector3(9, .48, -5.7), Vector3(.9, .96, .85), -.12)
@@ -241,7 +241,7 @@ func _crew(pos: Vector3, yaw: float, clip: String, color: Color, offset: float) 
 	actor.rotation.y = yaw
 	add_child(actor)
 	actors.append(actor)
-	var expression: String = {"menu_smoke":"Veteran", "menu_sit":"Smirk", "menu_lean":"Skeptic"}[clip]
+	var expression: String = {"menu_cocoa":"Veteran", "menu_sit":"Smirk", "menu_lean":"Skeptic"}[clip]
 	var blink_targets: Array[Dictionary] = []
 	for node in actor.find_children("*", "MeshInstance3D", true, false):
 		for index in node.mesh.get_blend_shape_count():
@@ -264,9 +264,12 @@ func _crew(pos: Vector3, yaw: float, clip: String, color: Color, offset: float) 
 				coat.set_shader_parameter("surface_color", material.albedo_texture)
 				coat.set_shader_parameter("coat_mask", preload("res://assets/elf/textures/crew_coat_tint.png"))
 				coat.set_shader_parameter("coat_color", color)
+				# Matte wool: the nearby lantern otherwise washes sleeve folds cream.
+				coat.set_shader_parameter("cloth_specular", 0.0)
 				node.set_surface_override_material(surface, coat)
-			# The third crew member is simply enjoying the break.
-			elif clip == "menu_lean" and material and material.resource_name.begins_with("Cigarette"):
+			elif clip != "menu_sit" and material and material.resource_name.begins_with("Candy cane"):
+				node.hide()
+			elif clip != "menu_cocoa" and material and material.resource_name.begins_with("Cocoa"):
 				node.hide()
 			elif clip != "menu_lean" and material and material.resource_name.begins_with("Watch"):
 				node.hide()
@@ -277,44 +280,44 @@ func _crew(pos: Vector3, yaw: float, clip: String, color: Color, offset: float) 
 	animation.advance(offset)
 	animations.append(animation)
 	faces.append({"player":animation, "targets":blink_targets, "offset":offset*.73, "expression":expression})
-	if clip != "menu_lean":
+	if clip == "menu_cocoa":
 		var skeleton: Skeleton3D = actor.find_children("*", "Skeleton3D", true, false)[0]
 		var attachment := BoneAttachment3D.new()
-		attachment.bone_name = "SmokeTip"
+		attachment.bone_name = "MugSteam"
 		skeleton.add_child(attachment)
-		_smoke(attachment)
+		_steam(attachment)
 
-func _smoke(parent: Node3D) -> void:
-	var smoke := CPUParticles3D.new()
-	smoke.name = "CigaretteSmoke"
-	smoke.amount = 24
-	smoke.lifetime = 4.8
-	smoke.preprocess = 4.8
-	smoke.local_coords = false
-	smoke.direction = Vector3(0,1,0)
-	smoke.spread = 12
-	smoke.initial_velocity_min = .20
-	smoke.initial_velocity_max = .25
-	smoke.gravity = Vector3(.035,.035,0)
-	smoke.scale_amount_min = .10
-	smoke.scale_amount_max = .16
+func _steam(parent: Node3D) -> void:
+	var steam := CPUParticles3D.new()
+	steam.name = "CocoaSteam"
+	steam.amount = 18
+	steam.lifetime = 2.4
+	steam.preprocess = 2.4
+	steam.local_coords = false
+	steam.direction = Vector3(0,1,0)
+	steam.spread = 12
+	steam.initial_velocity_min = .10
+	steam.initial_velocity_max = .16
+	steam.gravity = Vector3(.015,.05,0)
+	steam.scale_amount_min = .045
+	steam.scale_amount_max = .075
 	var scale_curve := Curve.new()
 	scale_curve.add_point(Vector2(0,.15))
 	scale_curve.add_point(Vector2(1,1))
-	smoke.scale_amount_curve = scale_curve
+	steam.scale_amount_curve = scale_curve
 	var ramp := Gradient.new()
 	ramp.offsets = PackedFloat32Array([0,.15,.7,1])
 	ramp.colors = PackedColorArray([Color(1,1,1,0),Color(1,1,1,.7),Color(1,1,1,.3),Color(1,1,1,0)])
-	smoke.color_ramp = ramp
+	steam.color_ramp = ramp
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2,2)
-	smoke.mesh = quad
+	steam.mesh = quad
 	var material := ShaderMaterial.new()
 	material.shader = SOFT_PARTICLE
-	material.set_shader_parameter("tint",Color(.78,.85,.91,.55))
-	smoke.material_override = material
-	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(smoke)
+	material.set_shader_parameter("tint",Color(.91,.90,.84,.45))
+	steam.material_override = material
+	steam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(steam)
 
 func _snow() -> void:
 	var snow := CPUParticles3D.new()

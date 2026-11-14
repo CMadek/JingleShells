@@ -6,7 +6,7 @@ end poses and tangents; the export is batched by material just like the game elf
 import bpy
 import math
 from pathlib import Path
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'assets/menu'
@@ -22,8 +22,6 @@ scene.render.fps = 24
 scene.frame_start = 1
 scene.frame_end = 577
 
-# A discreet cigarette sits at the corner of the mouth; the mitten touches it
-# during the inhale, rather than a floating prop sliding through the face.
 def material(name, color, emission=False):
     m = bpy.data.materials.new(name)
     m.diffuse_color = (*color, 1)
@@ -36,28 +34,8 @@ def material(name, color, emission=False):
         bsdf.inputs['Emission Strength'].default_value = 1.8
     return m
 
-paper = material('Cigarette paper', (.80, .74, .58))
-ember = material('Cigarette ember', (.95, .18, .035), True)
-ash = material('Cigarette ash', (.18, .15, .13))
-start = Vector((.055, -.239, 1.398))
-end = Vector((.095, -.385, 1.378))
-axis = (end - start).normalized()
-for name, a, b, radius, mat in [
-    ('Cigarette', start, end, .009, paper),
-    ('Burning tip', end, end + axis * .009, .0095, ember),
-    ('Ash tip', end + axis * .009, end + axis * .015, .008, ash),
-]:
-    bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=radius, depth=(b-a).length, location=(a+b)/2)
-    o = bpy.context.object
-    o.name = name
-    o.rotation_euler = (b-a).to_track_quat('Z', 'Y').to_euler()
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    o.data.materials.append(mat)
-    group = o.vertex_groups.new(name='Head')
-    group.add(list(range(len(o.data.vertices))), 1, 'REPLACE')
-    modifier = o.modifiers.new('Crew rig', 'ARMATURE')
-    modifier.object = rig
-    o.parent = rig
+exec(compile((ROOT / 'art/menu/refreshments.py').read_text(), 'refreshments.py', 'exec'), globals())
+exec(compile((ROOT / 'art/menu/tailoring.py').read_text(), 'tailoring.py', 'exec'), globals())
 
 # A real watch makes the checking gesture readable rather than miming a prop.
 watch_brass = material('Watch brass', (.52, .34, .13))
@@ -91,26 +69,43 @@ for tip in [Vector((-.44,-.161,.841)), Vector((-.413,-.161,.791))]:
 
 exec(compile((ROOT / 'art/menu/faces.py').read_text(), 'faces.py', 'exec'), globals())
 
-# Marker bone gives Godot an exact smoke origin that follows the head animation.
+# The mug control and steam origin follow the animated cup, never the face.
 bpy.context.view_layer.objects.active = rig
 bpy.ops.object.mode_set(mode='EDIT')
-tip = rig.data.edit_bones.new('SmokeTip')
-tip.head = end + axis * .015
-tip.tail = tip.head + Vector((0, 0, .04))
-tip.parent = rig.data.edit_bones['Head']
+mug = rig.data.edit_bones.new('Mug')
+mug.head = (0,0,0)
+mug.tail = (0,0,.12)
+mug.parent = rig.data.edit_bones['Root']
+tip = rig.data.edit_bones.new('MugSteam')
+tip.head = (0,0,.15)
+tip.tail = (0,0,.20)
+tip.parent = mug
 bpy.ops.object.mode_set(mode='OBJECT')
 
 targets = {}
-constraints = []
-for side in ('L', 'R'):
-    target = bpy.data.objects.new('Hand target ' + side, None)
-    scene.collection.objects.link(target)
-    targets[side] = target
-    ik = rig.pose.bones['Forearm' + side].constraints.new('IK')
-    ik.target = target
-    ik.chain_count = 2
-    ik.use_stretch = False
-    constraints.append(ik)
+
+def solve_arm(side, wrist):
+    """Two-link IK with a deliberate elbow plane, avoiding flared/swapped bends."""
+    upper = rig.pose.bones['Arm'+side]
+    lower = rig.pose.bones['Forearm'+side]
+    spine = rig.pose.bones['Spine']
+    parent = spine.matrix @ spine.bone.matrix_local.inverted()
+    shoulder = parent @ upper.bone.head_local
+    direction = Vector(wrist)-shoulder
+    length = max(.001, min(direction.length, upper.length+lower.length-.0001))
+    direction.normalize()
+    sign = -1 if side == 'L' else 1
+    pole = parent @ Vector((sign*.49,.10,.78))
+    bend = pole-shoulder
+    bend = (bend-direction*bend.dot(direction)).normalized()
+    along = (upper.length**2-lower.length**2+length**2)/(2*length)
+    elbow = shoulder+direction*along+bend*math.sqrt(max(0,upper.length**2-along**2))
+    end = shoulder+direction*length
+    for bone, start, finish in ((upper,shoulder,elbow),(lower,elbow,end)):
+        rest = bone.bone
+        rotation = (rest.tail_local-rest.head_local).rotation_difference(finish-start)
+        bone.matrix = Matrix.Translation(start) @ rotation.to_matrix().to_4x4() @ rest.matrix_local.to_3x3().to_4x4()
+        bpy.context.view_layer.update()
 
 rig.animation_data_create()
 def smooth_pulse(t, start, rise_end, fall_start, end):
@@ -119,7 +114,7 @@ def smooth_pulse(t, start, rise_end, fall_start, end):
         return v*v*v*(v*(v*6-15)+10)
     return ease((t-start)/(rise_end-start)) * (1-ease((t-fall_start)/(end-fall_start)))
 
-for clip in ('menu_smoke', 'menu_sit', 'menu_lean'):
+for clip in ('menu_cocoa', 'menu_sit', 'menu_lean'):
     samples = []
     for frame in range(1, 578, 4):
         phase = (frame - 1) / 576 * math.tau
@@ -136,14 +131,29 @@ for clip in ('menu_smoke', 'menu_sit', 'menu_lean'):
         bones['Head'].rotation_euler.z = .035 * math.cos(phase * 2)
         bones['Scarf'].rotation_euler.x = -.025 + .018 * math.sin(phase * 3)
         bones['Scarf'].rotation_euler.z = .025 * math.sin(phase * 2)
-        if clip == 'menu_smoke':
-            # A slow inhale, a pause, then the hand lowers onto the hip.
-            inhale = smooth_pulse(time, 1.5, 2.6, 4.4, 5.6) + smooth_pulse(time, 13.5, 14.6, 16.4, 17.6)
-            targets['R'].location = Vector((.46, -.13, .91)).lerp(Vector((.09, -.295, 1.36)), inhale)
-            targets['L'].location = (-.47, -.10, .80 + .035*math.sin(phase*2))
+        if clip == 'menu_cocoa':
+            # Lift, tip gently against the lips, pause, and lower the mug.
+            sip = smooth_pulse(time, 1.5, 3.0, 4.2, 5.8) + smooth_pulse(time, 13.5, 15.0, 16.2, 17.8)
+            targets['L'] = (-.43, -.07, .70 + .015*math.sin(phase*2))
             bones['Spine'].rotation_euler.z = -.035 + .045*math.sin(phase*2)
-            bones['Head'].rotation_euler.x = -.025 - .10*smooth_pulse(time, 5, 6, 6.7, 7.8)
-            bones['Head'].rotation_euler.y = .23*math.sin(phase*2) * (1-.5*inhale)
+            bones['Head'].rotation_euler.x = -.05*sip
+            bones['Head'].rotation_euler.y = .18*math.sin(phase*2)*(1-sip)
+            bones['Head'].rotation_euler.z *= 1-sip
+            bpy.context.view_layer.update()
+            mouth = bones['Head'].matrix @ bones['Head'].bone.matrix_local.inverted() @ Vector((.025,-.234,1.395))
+            mug_rotation = Matrix.Rotation(-.28*sip,4,'X')
+            sip_center = mouth - mug_rotation.to_3x3() @ Vector((0,.106,.12))
+            mug_center = Vector((.14,-.46,1.00)).lerp(sip_center,sip)
+            mug_transform = Matrix.Translation(mug_center) @ mug_rotation
+            bones['Mug'].matrix = mug_transform @ bones['Mug'].bone.matrix_local
+            grip = mug_transform @ Vector((.23,0,-.015))
+            targets['R'] = grip.copy()
+            # Correct for the mitten's offset from the forearm tail. The hand
+            # stays wrapped around the handle as the arm bends and the cup tips.
+            for adjustment in range(8):
+                solve_arm('R', targets['R'])
+                hand = bones['ForearmR'].matrix @ bones['ForearmR'].bone.matrix_local.inverted() @ Vector((.44,-.045,.65))
+                targets['R'] += grip-hand
         elif clip == 'menu_sit':
             # Seat is .46m high, with the pelvis at the front edge. Rotate the
             # thighs out at the hips so both boots clear each other throughout.
@@ -153,18 +163,20 @@ for clip in ('menu_smoke', 'menu_sit', 'menu_lean'):
             bones['ThighR'].rotation_euler = (-1.42, -.20, 0)
             bones['ShinL'].rotation_euler.x = 1.14 + .48 * math.sin(phase * 6)
             bones['ShinR'].rotation_euler.x = 1.20 + .46 * math.sin(phase * 6 + math.pi)
-            targets['L'].location = (-.32, -.38, .83)
-            targets['R'].location = (.32, -.37, .84)
+            targets['L'] = (-.32, -.38, .83)
+            targets['R'] = (.32, -.37, .84)
             bones['Head'].rotation_euler.y = -.10 + .23 * math.sin(phase * 2)
             bones['Head'].rotation_euler.x = .04*math.sin(phase*6)
         else:
             checking = smooth_pulse(time, 3, 4.2, 7.3, 8.7) + smooth_pulse(time, 16, 17.2, 19.3, 20.7)
             bones['Spine'].rotation_euler.z = .035 + .045*math.sin(phase)
-            targets['L'].location = Vector((-.48,.015,.91)).lerp(Vector((-.16,-.42,1.06)), checking)
-            targets['R'].location = (.39,-.19,.88)
+            targets['L'] = Vector((-.46,-.04,.76)).lerp(Vector((-.16,-.42,1.06)), checking)
+            targets['R'] = (.43,-.10,.73)
             bones['Head'].rotation_euler.x = .43*checking
             bones['Head'].rotation_euler.y = (.20 + .18*math.sin(phase))*(1-checking) - .24*checking
         bpy.context.view_layer.update()
+        solve_arm('L', targets['L'])
+        solve_arm('R', targets['R'])
         # Bake IK to ordinary local bone transforms; no runtime constraints.
         matrices = {p.name: p.matrix.copy() for p in bones}
         local = {}
@@ -177,8 +189,6 @@ for clip in ('menu_smoke', 'menu_sit', 'menu_lean'):
                 invert=True,
             ) if parent else p.bone.matrix_local.inverted() @ matrices[p.name]
         samples.append((frame, local))
-    for ik in constraints:
-        ik.mute = True
     action = bpy.data.actions.new(clip)
     rig.animation_data.action = action
     for frame, transforms in samples:
@@ -196,13 +206,6 @@ for clip in ('menu_smoke', 'menu_sit', 'menu_lean'):
     track.strips.new(clip, 1, action)
     track.mute = True
     rig.animation_data.action = None
-    for ik in constraints:
-        ik.mute = False
-
-for side in ('L', 'R'):
-    for constraint in list(rig.pose.bones['Forearm' + side].constraints):
-        rig.pose.bones['Forearm' + side].constraints.remove(constraint)
-    bpy.data.objects.remove(targets[side], do_unlink=True)
 for p in rig.pose.bones:
     p.location = (0, 0, 0)
     p.rotation_quaternion = (1, 0, 0, 0)
