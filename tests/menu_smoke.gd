@@ -12,6 +12,23 @@ func _ready() -> void:
 	main.ui.show_page("options")
 	var saved: Dictionary = Game.values.duplicate()
 	await get_tree().process_frame
+	assert(main.ui.tab_sections[0].visible and not main.ui.tab_sections[1].visible)
+	main.ui.number_fields.volume.value = 37
+	var next_tab := InputEventKey.new()
+	next_tab.keycode = KEY_E
+	next_tab.pressed = true
+	get_viewport().push_input(next_tab, true)
+	assert(main.ui.active_tab == 1 and main.ui.tab_sections[1].visible)
+	assert(main.ui.draft.volume == 37 and Game.values.volume == saved.volume)
+	main.ui.restore_defaults()
+	assert(main.ui.active_tab == 1 and main.ui.draft == Game.DEFAULTS)
+	var escape := InputEventKey.new()
+	escape.keycode = KEY_ESCAPE
+	escape.pressed = true
+	get_viewport().push_input(escape, true)
+	assert(main.ui.page == "main" and Game.values == saved)
+	main.ui.show_page("options")
+	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("res://.test-data/options-sliders.png")
 	for key in ["fps", "fov", "volume", "sensitivity"]:

@@ -1,6 +1,6 @@
 extends Node
 
-const DEFAULTS := {"mode": 0, "resolution": 0, "vsync": true, "fps": 120, "fov": 75.0, "volume": 80.0, "sensitivity": 1.0, "invert": false}
+const DEFAULTS := {"mode": 0, "resolution": 0, "vsync": true, "fps": 120, "fov": 75.0, "volume": 80.0, "sensitivity": 1.0, "invert": false, "menu_motion": true}
 const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080)]
 var values: Dictionary = DEFAULTS.duplicate()
 var menu_open := true
