@@ -10,26 +10,26 @@ var tab_sections: Array[VBoxContainer] = []
 var active_tab := 0
 
 const HELP := """NORTH STAR MK II
-Collect presents and bombs from the rear stores with E. Carry them to the loading end of either return track and press E. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
+Collect presents and bombs from the rear stores with {interact}. Carry them to the loading end of either return track and press {interact}. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
 
-With empty hands, aim at any queued item and press E to retrieve it. Reload it at the loading end to move it to the back. Full or cycling tracks keep your held item safe.
+With empty hands, aim at any queued item and press {interact} to retrieve it. Reload it at the loading end to move it to the back. Full or cycling tracks keep your held item safe.
 
 DELIVERY CONSOLE
-Aim at the port-side console ahead of the tracks and press E with empty hands. Both cargo launchers are controlled here: 1 selects LEFT, 2 selects RIGHT, and Space releases one item. The green circle and center crosshair predict the selected cargo landing after the 0.45-second release delay, assuming current flight inputs continue. Cargo is never guided. Q leaves the station.
+Aim at the port-side console ahead of the tracks and press {interact} with empty hands. Both cargo launchers are controlled here: {launcher_left} selects LEFT, {launcher_right} selects RIGHT, and {launcher_release} releases one item. The green circle and center crosshair predict the selected cargo landing after the 0.45-second release delay, assuming current flight inputs continue. Cargo is never guided. {launcher_leave} leaves the station.
 
 VENTRAL TURRET
-Click the BELLY GUN hatch to the right of the cockpit stairs with empty hands to climb into the glass pod. Ctrl returns you to the cabin beside the stairs. Mouse aims, left click fires a snowball, and holding right mouse lets you look around without moving the guns. The turret rotates through 360 degrees; shots into the aircraft are blocked. Snowballs create cosmetic impacts only. A teammate can operate delivery independently.
+Use {crew_primary} at the BELLY GUN hatch to the right of the cockpit stairs with empty hands to climb into the glass pod. {turret_leave} returns you to the cabin beside the stairs. Mouse aims, {turret_fire} fires a snowball, and holding {turret_look} lets you look around without moving the guns. The turret rotates through 360 degrees; shots into the aircraft are blocked. Snowballs create cosmetic impacts only. A teammate can operate delivery independently.
 
 FLIGHT AND DELIVERY
-Walk up the cockpit steps; E at the helm enters/leaves. W/S throttle (hold S to brake), A/D turn, Space climb/take off at 18 m/s, Shift descend. V toggles cockpit/chase view; right-drag orbits the chase camera.
+Walk up the cockpit steps; {interact} at the helm enters/leaves. {move_forward}/{move_back} throttle (hold {move_back} to brake), {move_left}/{move_right} turn, {jump} climb/take off at 18 m/s, {descend} descend. {pilot_view} toggles cockpit/chase view; hold {pilot_orbit} and drag to orbit the chase camera.
 Presents: nice house +10, precise nice chimney +15 total; naughty house −5. Bombs destroy only the house directly hit and add no score.
 
 WALKING
-WASD move • Space jump • Ctrl crouch • E interact
-Hold/release left mouse to throw held cargo • G drop
-E operates the outside boarding door from either side. The rear emergency exit tears off when released and restores next level.
+{move_forward}/{move_left}/{move_back}/{move_right} move • {jump} jump • {crouch} crouch • {interact} interact
+Hold/release {crew_primary} to throw held cargo • {drop_cargo} drop
+{interact} operates the outside boarding door from either side. The rear emergency exit tears off when released and restores next level.
 
-Escape opens the menu. Online play continues; your gameplay input is suppressed. Q leaves the delivery console; Ctrl leaves the turret."""
+{flight_menu} opens the menu. Online play continues; your gameplay input is suppressed. {launcher_leave} leaves the delivery console; {turret_leave} leaves the turret."""
 var root: Control
 var box: VBoxContainer
 var status: Label
@@ -43,6 +43,9 @@ var display_deadline := 0
 var display_dialog: ConfirmationDialog
 var number_fields := {}
 var backdrop: Control
+var binding_buttons := {}
+var capture_action := ""
+var consume_release := 0
 var main_margin: MarginContainer
 var main_logo: TextureRect
 var scrim: ColorRect
@@ -60,15 +63,30 @@ func in_game() -> bool:
 	return get_parent().get_node_or_null("World") != null
 
 func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") and not event.is_echo():
+	if capture_action != "":
+		get_viewport().set_input_as_handled()
+		if event.is_action_pressed("ui_cancel") or ((event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo()):
+			capture_binding(event)
+		return
+	if consume_release != 0 and Game.bindings.event_code(event) == consume_release:
+		if event.is_echo() or not event.is_pressed():
+			get_viewport().set_input_as_handled()
+			if not event.is_pressed():
+				consume_release = 0
+			return
+		consume_release = 0
+	if not root.visible:
+		if event.is_action_pressed("flight_menu") or (event is InputEventJoypadButton and event.is_action_pressed("ui_cancel")):
+			get_viewport().set_input_as_handled()
+			show_page("pause")
+		return
+	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		if is_instance_valid(display_dialog):
 			_revert_display()
 		elif is_instance_valid(dialog):
 			dialog.queue_free()
 			dialog = null
-		elif not root.visible:
-			show_page("pause")
 		elif page == "pause":
 			resume_game()
 		elif page == "options":
@@ -80,16 +98,14 @@ func _input(event: InputEvent) -> void:
 		else:
 			show_page("pause" if in_game() else "main")
 
-func _unhandled_key_input(event: InputEvent) -> void:
-	if page != "options" or not root.visible or is_instance_valid(dialog) or is_instance_valid(display_dialog):
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		var focus := get_viewport().gui_get_focus_owner()
-		if focus is LineEdit:
+	if page == "options" and not is_instance_valid(dialog) and not is_instance_valid(display_dialog):
+		if get_viewport().gui_get_focus_owner() is LineEdit:
 			return
-		if event.keycode in [KEY_Q, KEY_E]:
+		if event.is_action_pressed("previous_tab") or event.is_action_pressed("next_tab"):
 			get_viewport().set_input_as_handled()
-			select_tab(wrapi(active_tab + (-1 if event.keycode == KEY_Q else 1), 0, TAB_NAMES.size()), true)
+			var step := -1 if event.is_action_pressed("previous_tab") else 1
+			select_tab(wrapi(active_tab + step, 0, TAB_NAMES.size()), true)
 
 func _process(_delta: float) -> void:
 	if page in ["main", "play"] and root.visible:
@@ -107,6 +123,8 @@ func _block_input() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var world = get_parent().get_node_or_null("World")
 	if world:
+		world.stations.turret_free_look = false
+		world.stations.look_offset = Vector2.ZERO
 		var elf = world.players.get(multiplayer.get_unique_id())
 		if elf:
 			elf.dragging_orbit = false
@@ -122,6 +140,9 @@ func show_page(next: String, message: String = "", reset_options := false) -> vo
 		Game.apply_settings()
 		display_dialog = null
 	dialog = null
+	capture_action = ""
+	consume_release = 0
+	binding_buttons.clear()
 	menu_revision += 1
 	_block_input()
 	root.show()
@@ -243,7 +264,7 @@ func show_page(next: String, message: String = "", reset_options := false) -> vo
 	elif page == "options":
 		build_options(reset_options)
 	elif page == "help":
-		for paragraph in HELP.split("\n\n"):
+		for paragraph in HELP.format(Game.bindings.labels).split("\n\n"):
 			var lines := paragraph.split("\n", true, 1)
 			if lines.size() == 2 and lines[0] == lines[0].to_upper():
 				DispatchPage.section(box, lines[0])
@@ -373,6 +394,8 @@ func show_notice(message: String) -> void:
 func resume_game() -> void:
 	if not in_game():
 		return
+	capture_action = ""
+	consume_release = 0
 	release_backdrop()
 	root.hide()
 	Game.menu_open = false
@@ -474,7 +497,7 @@ func build_options(reset: bool) -> void:
 		tab.text = TAB_NAMES[index].to_upper()
 		tab.theme_type_variation = &"DispatchTab"
 		tab.toggle_mode = true
-		tab.tooltip_text = "Q / E   Previous / next tab"
+		tab.tooltip_text = "{previous_tab} / {next_tab}   Previous / next tab".format(Game.bindings.labels)
 		shell.tabs.add_child(tab)
 		tab.pressed.connect(select_tab.bind(index, true))
 		var section := VBoxContainer.new()
@@ -505,16 +528,16 @@ func build_options(reset: bool) -> void:
 	number("Sensitivity", "sensitivity", 0.2, 3, 0.1)
 	toggle("Invert Vertical Look", "invert")
 	DispatchPage.section(box, "Crew Controls")
-	for binding in [["Move Forward","move_forward"],["Move Back","move_back"],["Move Left","move_left"],["Move Right","move_right"],["Jump / Climb","jump"],["Descend","descend"],["Crouch","crouch"],["Interact","interact"],["Drop Cargo","drop_cargo"],["Pilot View","pilot_view"]]:
-		var keys := PackedStringArray()
-		for event in InputMap.action_get_events(binding[1]):
-			if event is InputEventKey:
-				keys.append(event.as_text_physical_keycode().trim_suffix(" (Physical)"))
-		binding_row(binding[0], " / ".join(keys))
-	binding_row("Throw Cargo / Fire Snowball", "Left mouse")
-	binding_row("Orbit / Look around", "Right drag")
-	binding_row("Select Chute / Release", "1, 2 / Space")
-	binding_row("Leave Console / Turret", "Q / Ctrl")
+	label("Select a control, then press a key or mouse button. Esc cancels. Bindings save immediately.", 16)
+	for action in Game.bindings.ACTIONS:
+		var row := field_row(Game.bindings.ACTIONS[action][0])
+		var control := Button.new()
+		control.text = Game.bindings.labels[action]
+		control.accessibility_name = "%s: %s" % [Game.bindings.ACTIONS[action][0], control.text]
+		row.add_child(control)
+		binding_buttons[action] = control
+		control.pressed.connect(begin_capture.bind(action))
+	button("Reset key bindings", func(): commit_bindings(Game.bindings.defaults()))
 	box = shell.content
 	footer_button("Back", func(): show_page(return_page))
 	DispatchPage.rule(shell.footer)
@@ -525,12 +548,41 @@ func build_options(reset: bool) -> void:
 	select_tab(0)
 	shell._fit()
 
-func binding_row(action: String, keys: String) -> void:
-	var row := field_row(action)
-	var value := Label.new()
-	value.text = keys
-	value.add_theme_color_override("font_color", Look.GOLD)
-	row.add_child(value)
+func begin_capture(action: String) -> void:
+	capture_action = action
+	binding_buttons[action].text = "Press input… (Esc cancels)"
+
+func capture_binding(event: InputEvent) -> void:
+	var action := capture_action
+	var code := Game.bindings.event_code(event)
+	if event.is_action_pressed("ui_cancel"):
+		capture_action = ""
+		consume_release = code
+		binding_buttons[action].text = Game.bindings.labels[action]
+		return
+	if not Game.bindings.allowed(action, code):
+		binding_buttons[action].text = "Try another key (Esc cancels)"
+		return
+	var other := Game.bindings.conflict(action, code, Game.bindings.codes)
+	if other != "":
+		binding_buttons[action].text = "In use: " + Game.bindings.ACTIONS[other][0]
+		return
+	var mapping := Game.bindings.codes.duplicate()
+	mapping[action] = code
+	capture_action = ""
+	consume_release = code
+	commit_bindings(mapping)
+
+func commit_bindings(mapping: Dictionary) -> void:
+	var error := Game.save_bindings(mapping)
+	for action in binding_buttons:
+		var control: Button = binding_buttons[action]
+		control.text = Game.bindings.labels[action]
+		control.accessibility_name = "%s: %s" % [Game.bindings.ACTIONS[action][0], control.text]
+	for tab in shell.tabs.get_children():
+		tab.tooltip_text = "{previous_tab} / {next_tab}   Previous / next tab".format(Game.bindings.labels)
+	if error != OK:
+		show_notice("Could not save controls: " + error_string(error))
 
 func select_tab(index: int, focus_tab := false) -> void:
 	for field in number_fields.values():

@@ -90,9 +90,9 @@ func prompt(id: int) -> String:
 	if a.is_empty(): return ""
 	if remaining[a.rack] > 0: return "Chute cycling — please wait"
 	if a.id != 0:
-		return "Empty your hands to retrieve" if world.players[id].held_kind != 0 else "E — Retrieve %s • position %d" % ["present" if a.kind == 1 else "bomb",a.index+1]
+		return "Empty your hands to retrieve" if world.players[id].held_kind != 0 else "%s — Retrieve %s • position %d" % [Game.bindings.labels.interact, "present" if a.kind == 1 else "bomb",a.index+1]
 	if queues[a.rack].size() == 5: return "Rack full • 5/5"
-	return ("E — Load held cargo" if world.players[id].held_kind else "Carry cargo here to load")+" • %d/5" % queues[a.rack].size()
+	return ("%s — Load held cargo" % Game.bindings.labels.interact if world.players[id].held_kind else "Carry cargo here to load")+" • %d/5" % queues[a.rack].size()
 
 func interact(id: int) -> bool:
 	var a := aimed(id)

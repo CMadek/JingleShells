@@ -372,7 +372,6 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	view_button = Button.new()
-	view_button.text = "Chase view [V]"
 	view_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	view_button.offset_left = -178
 	view_button.offset_top = -56
@@ -500,7 +499,6 @@ func set_pilot(id: int) -> void:
 	if elf:
 		elf.set_local_pilot(id == me)
 	view_button.visible = id == me
-	view_button.text = "Chase view [V]"
 	in_steer = 0.0
 	in_throttle = 0.0
 	in_climb = 0.0
@@ -511,8 +509,7 @@ func toggle_pilot_view() -> void:
 		return
 	var me := multiplayer.get_unique_id()
 	if pilot_id == me and players.has(me):
-		var outside: bool = players[me].toggle_view()
-		view_button.text = "Cockpit view [V]" if outside else "Chase view [V]"
+		players[me].toggle_view()
 
 
 func send_pilot_input(steer: float, throttle: float, climb: float) -> void:
@@ -667,7 +664,7 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 		state.pitch = 0
 		state.roll = 0
 		state.grounded = true
-		state.phase = "LANDED / HOLD S TO BRAKE"
+		state.phase = "LANDED"
 	elif state.position.y > MAX_ALTITUDE:
 		state.position.y = MAX_ALTITUDE
 		state.pitch = minf(state.pitch, 0.0)
@@ -994,37 +991,39 @@ func _process(delta: float) -> void:
 	var me := multiplayer.get_unique_id()
 	var txt := "%s | Speed %d m/s | Throttle %d%% | Altitude %d\n" % [phase,speed,throttle*100,bomber.position.y]
 	if pilot_id == me:
-		txt += "PILOTING: W/S speed, A/D turn, Space/Shift climb/dive, E to leave the helm"
-		if players.has(me) and players[me].chase.current:
-			txt += "   Hold RMB and drag to orbit"
+		var outside: bool = players.has(me) and players[me].chase.current
+		view_button.text = ("Cockpit view [{pilot_view}]" if outside else "Chase view [{pilot_view}]").format(Game.bindings.labels)
+		txt += "PILOTING: {move_forward}/{move_back} speed, {move_left}/{move_right} turn, {jump}/{descend} climb/dive, {interact} to leave the helm"
+		if outside:
+			txt += "   Hold {pilot_orbit} and drag to orbit"
 	else:
 		var elf = players.get(me)
 		if elf and elf.held_kind != Cargo.Kind.EMPTY:
-			txt += "Hold left click to throw   G to drop"
+			txt += "Hold {crew_primary} to throw   {drop_cargo} to drop"
 			if elf.charging_since >= 0:
 				var elapsed := (Time.get_ticks_msec() - int(elf.charging_since)) / 1000.0
 				txt += "   Charge: %d%%" % roundi(100 * clampf(elapsed / charge_seconds, 0, 1))
 		elif elf and aimed_loose(elf.head.global_transform) != 0:
-			txt += "E to pick up dropped cargo"
+			txt += "{interact} to pick up dropped cargo"
 		elif elf and aimed_pile(elf.head.global_transform) != Cargo.Kind.EMPTY:
-			txt += "E to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
+			txt += "{interact} to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
 		else:
-			txt += "WASD walk, Space jump, E at the helm to fly"
-	txt += "\nGreen chimney = nice, red chimney = naughty. Ctrl crouches. Esc opens the menu."
+			txt += "{move_forward}/{move_left}/{move_back}/{move_right} walk, {jump} jump, {interact} at the helm to fly"
+	txt += "\nGreen chimney = nice, red chimney = naughty. {crouch} crouches. {flight_menu} opens the menu."
 	var local_elf = players.get(me)
 	if local_elf:
 		var queue_prompt: String = queues.prompt(me)
 		if queue_prompt != "": txt += "\n"+queue_prompt
 		var station_target: String = stations.aimed(me) if queue_prompt == "" else ""
-		if station_target == "turret": txt += "\nClick — Enter gun hatch • Ctrl — Leave turret"
-		elif station_target == "delivery": txt += "\nE — Operate delivery console • Q — Leave"
-		if emergency.aimed(local_elf.head.global_transform): txt += "\nE — Emergency exit (tears door off)"
+		if station_target == "turret": txt += "\n{crew_primary} — Enter gun hatch • {turret_leave} — Leave turret"
+		elif station_target == "delivery": txt += "\n{interact} — Operate delivery console • {launcher_leave} — Leave"
+		if emergency.aimed(local_elf.head.global_transform): txt += "\n{interact} — Emergency exit (tears door off)"
 		var target: String = access.aimed(local_elf.head.global_transform)
-		if target != "": txt += "\nE — " + ("Close " if access.opened[target] else "Open ") + target
+		if target != "": txt += "\n{interact} — " + ("Close " if access.opened[target] else "Open ") + target
 	if grounded:
-		txt += "\nW throttle • Space at 18 m/s to take off • Hold S to brake"
+		txt += "\n{move_forward} throttle • {jump} at 18 m/s to take off • Hold {move_back} to brake"
 	hud_info.visible = stations.active_local == ""
-	hud_info.text = txt
+	hud_info.text = txt.format(Game.bindings.labels)
 	if msg_timer > 0.0:
 		msg_timer -= delta
 		if msg_timer <= 0.0:

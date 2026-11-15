@@ -10,7 +10,7 @@ func _draw() -> void:
 	var font := ThemeDB.fallback_font
 	var hit: Dictionary = stations.predictions[stations.selected]
 	var color := Color(.20,1.0,.42)
-	var title := ("LEFT" if stations.selected == 0 else "RIGHT")+" LAUNCHER  /  SPACE TO RELEASE"
+	var title := ("LEFT" if stations.selected == 0 else "RIGHT")+" LAUNCHER  /  %s TO RELEASE" % String(Game.bindings.labels.launcher_release).to_upper()
 	var viewport_size := get_viewport_rect().size
 	var title_at := Vector2(viewport_size.x*.5-font.get_string_size(title,HORIZONTAL_ALIGNMENT_LEFT,-1,22).x*.5,42)
 	draw_string_outline(font,title_at,title,HORIZONTAL_ALIGNMENT_LEFT,-1,22,5,Color.BLACK)

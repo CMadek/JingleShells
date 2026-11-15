@@ -59,6 +59,8 @@ Options save to `user://settings.cfg`: window mode/resolution, VSync, frame limi
 
 ## Controls
 
+Settings → Controls lets you select an action and press a physical key or mouse button to rebind it. Esc cancels capture. Bindings save immediately to `user://settings.cfg`, independently of Apply and Cancel. Use **Reset key bindings** to restore the defaults below. A button can serve different actions in separate crew roles. Settings tab shortcuts use the keyboard.
+
 | Key | Walking | At the helm |
 |---|---|---|
 | WASD | walk | W/S speed, A/D turn |

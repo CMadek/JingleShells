@@ -82,11 +82,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if local_pilot and event.is_action_pressed("pilot_view"):
 		world.toggle_pilot_view()
 		return
-	if local_pilot and event is InputEventMouseButton:
-		if chase.current and event.button_index == MOUSE_BUTTON_RIGHT:
-			dragging_orbit = event.pressed
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if dragging_orbit else Input.MOUSE_MODE_VISIBLE
-			get_viewport().set_input_as_handled()
+	if local_pilot and chase.current and (event.is_action_pressed("pilot_orbit") or event.is_action_released("pilot_orbit")):
+		dragging_orbit = event.is_action_pressed("pilot_orbit")
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if dragging_orbit else Input.MOUSE_MODE_VISIBLE
+		get_viewport().set_input_as_handled()
 		return
 	if local_pilot and event is InputEventMouseMotion:
 		if dragging_orbit and chase.current and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -97,17 +96,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		rotate_y(-event.relative.x * MOUSE_SENS * Game.values.sensitivity)
 		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.values.sensitivity * (-1.0 if Game.values.invert else 1.0), -1.5, 1.5)
 		head.rotation.x = pitch
-	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed and world.stations.aimed(peer_id) == "turret":
+	elif not local_pilot and (event.is_action_pressed("crew_primary") or event.is_action_released("crew_primary")):
+		if event.is_pressed() and world.stations.aimed(peer_id) == "turret":
 			world.stations.request("turret")
 			get_viewport().set_input_as_handled()
-		elif event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		elif event.is_pressed() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and held_kind != Cargo.Kind.EMPTY and world.pilot_id != peer_id:
-			if event.pressed and charging_since < 0:
+			if event.is_pressed() and charging_since < 0:
 				charging_since = Time.get_ticks_msec()
 				world.cargo_action("charge")
-			elif not event.pressed and charging_since >= 0:
+			elif not event.is_pressed() and charging_since >= 0:
 				charging_since = -1
 				world.cargo_action("throw")
 	elif event.is_action_pressed("interact"):
@@ -129,7 +128,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			world.request_helm()
 		else:
 			world.cargo_action("pickup")
-	elif event.is_action_pressed("drop_cargo"):
+	elif not local_pilot and event.is_action_pressed("drop_cargo"):
 		charging_since = -1
 		world.cargo_action("drop")
 
