@@ -9,7 +9,13 @@ var pause_card: PanelContainer
 var tab_sections: Array[VBoxContainer] = []
 var active_tab := 0
 
-const HELP := """NORTH STAR MK II
+const HELP := """THE LAST STOP
+Sit on a couch cushion with {interact}; {jump} gets you up. Grab a practice parcel and hold/release {crew_primary} to aim for the chimney. Face the quartermaster and press {interact} to chat or shop. Buy a wrapped present to carry, or upgrade the whole crew with a throwing mitt or quick sling. Successful gift deliveries earn crew vouchers.
+
+NAVIGATION
+Take the folded chart from the coffee table with {interact}. Use {crew_primary} to read or fold it, {mark_chart} over the paper to pencil in a shared waypoint, and {show_chart} to offer it to a crewmate. The runway and departure lounge stay put; each new lobby surveys a different delivery district.
+
+NORTH STAR MK II
 Collect presents and bombs from the rear stores with {interact}. Carry them to the loading end of either return track and press {interact}. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
 
 With empty hands, aim at any queued item and press {interact} to retrieve it. Reload it at the loading end to move it to the back. Full or cycling tracks keep your held item safe.
@@ -76,6 +82,12 @@ func _input(event: InputEvent) -> void:
 			return
 		consume_release = 0
 	if not root.visible:
+		var world = get_parent().get_node_or_null("World")
+		if world and world.mess.dialogue.choosing() and (event.is_action_pressed("ui_cancel") or event.is_action_pressed("flight_menu")):
+			if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT):
+				get_viewport().set_input_as_handled()
+				world.mess.dialogue.close()
+			return
 		if event.is_action_pressed("flight_menu") or (event is InputEventJoypadButton and event.is_action_pressed("ui_cancel")):
 			get_viewport().set_input_as_handled()
 			show_page("pause")
@@ -127,6 +139,9 @@ func _block_input() -> void:
 		world.stations.look_offset = Vector2.ZERO
 		var elf = world.players.get(multiplayer.get_unique_id())
 		if elf:
+			if world.mess: world.mess.dialogue.close()
+			if world.mess and world.mess.presenting: world.mess.read_sheet(false)
+			if world.mess and world.mess.held(elf.peer_id) > 0: world.mess.request("cancel")
 			elf.dragging_orbit = false
 			elf.charging_since = -1
 			world.cargo_action("cancel")

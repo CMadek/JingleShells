@@ -34,30 +34,36 @@ func build(w: Node3D) -> void:
 	# Shop room has an east-facing exit onto the flight line.
 	var timber := Color("382c30")
 	box(Vector3(16,.18,18),Vector3(-28,-.02,841),Color("68503a"))
-	box(Vector3(.3,4.5,18),Vector3(-36,2.25,841),timber)
-	for z in [832,850]:
-		box(Vector3(16,4.5,.3),Vector3(-28,2.25,z),timber)
+	box(Vector3(.3,1.72,18),Vector3(-36,.86,841),timber)
+	box(Vector3(.3,.65,18),Vector3(-36,4.17,841),timber)
+	for z in [833.9,840.2,847.8]:
+		box(Vector3(.3,2.14,3.9),Vector3(-36,2.78,z),timber)
+	for z in range(833,850):
+		box(Vector3(.17,2.18,.085),Vector3(-35.9,2.77,z),Color("76634e"),false)
+	box(Vector3(.23,.08,17.9),Vector3(-35.94,2.83,841),Color("8a7356"),false)
+	box(Vector3(16,4.5,.3),Vector3(-28,2.25,850),timber)
+	box(Vector3(16,2.9,.3),Vector3(-28,1.45,832),timber)
+	box(Vector3(16,.42,.3),Vector3(-28,4.29,832),timber)
+	for x in [-33.82,-28.5,-22.95]:
+		box(Vector3(2.5 if x != -28.5 else 5.7,1.2,.3),Vector3(x,3.5,832),timber)
+	for x in range(16):
+		box(Vector3(.075,1.2,.13),Vector3(-35.5+x,3.49,832),Color("806f56"),false)
 	box(Vector3(.3,4.5,2),Vector3(-20,2.25,833),timber)
 	box(Vector3(.3,4.5,12),Vector3(-20,2.25,844),timber)
 	box(Vector3(.3,1.3,4),Vector3(-20,3.85,836),timber)
 	box(Vector3(17,.3,19),Vector3(-28,4.6,841),Color("d9e3e7"))
+	box(Vector3(16,.12,17.9),Vector3(-28,4.42,841),Color("4a3b31"),false)
 	for x in range(-35,-19,2):
 		box(Vector3(.10,4.3,.14),Vector3(x,2.2,832.2),Color("9a7956"),false)
 		box(Vector3(.14,.14,.14),Vector3(x,4.05,849.7),Color("f8c474"),false,true)
 	for z in [836,841,846]:
 		box(Vector3(15.7,.25,.25),Vector3(-28,4.15,z),Color("79583a"),false)
-	box(Vector3(11,1.1,1.2),Vector3(-28,.55,834.4),Color("542e33"))
-	box(Vector3(11.4,.12,1.5),Vector3(-28,1.16,834.4),Color("bb965a"))
-	world._label3d(self,"THE NAUGHTY LIST\nQUARTERMASTER",Vector3(-28,3.6,832.5))
-	world._label3d(self,"SHOP COMING SOON\nSupplies are aboard the North Star",Vector3(-33,2.6,833.2))
-	world._label3d(self,"01  BOARD\n02  COLLECT SUPPLIES\n03  TAKE FLIGHT",Vector3(-35.7,2.4,844))
-	world._label3d(self,"FLIGHT LINE  →",Vector3(-20,3.5,836))
+	box(Vector3(7.45,1.1,1.2),Vector3(-28.5,.55,834.4),Color("30483d"))
+	box(Vector3(7.66,.14,1.48),Vector3(-28.5,1.18,834.4),Color("916b40"))
 	world._label3d(self,"NORTH STAR AIRFIELD",Vector3(-19.7,4.45,841))
-	shopkeeper(Vector3(-28,.45,833.4))
 	for x in range(-18,-8,2):
 		box(Vector3(1.2,.02,.25),Vector3(x,.075,835.2),Color("e2b54e"),false)
-	for pos in [Vector3(-28,3.8,835),Vector3(-26,3.8,843),Vector3(-18,4,836)]:
-		lamp(pos, Color("ffc382"), 2.0, 13)
+	lamp(Vector3(-18,4,836), Color("b3cde4"), 1.0, 7)
 	for x in [-47,40]:
 		for z in range(760,901,35):
 			box(Vector3(.25,7,.25),Vector3(x,3.5,z),Color("364650"))
@@ -84,36 +90,3 @@ func lamp(pos: Vector3, color: Color, energy: float, reach: float) -> void:
 	light.light_energy = energy
 	light.omni_range = reach
 	add_child(light)
-
-func orb(pos: Vector3, size: Vector3, color: Color, glow := false) -> void:
-	var mesh := MeshInstance3D.new()
-	mesh.mesh = SphereMesh.new()
-	mesh.position = pos
-	mesh.scale = size
-	mesh.material_override = world._mat(color,glow)
-	add_child(mesh)
-
-func shopkeeper(pos: Vector3) -> void:
-	var skin := Color("91a776")
-	orb(pos+Vector3(0,.85,0),Vector3(1.2,.9,.7),Color("18392d"))
-	orb(pos+Vector3(0,1.45,0),Vector3(.35,.35,.35),skin)
-	orb(pos+Vector3(0,1.7,0),Vector3(.85,.55,.7),skin)
-	for side in [-1,1]:
-		orb(pos+Vector3(side*.55,1,.3),Vector3(.35,.45,.55),Color("18392d"))
-		orb(pos+Vector3(side*.65,1.1,.65),Vector3(.35,.17,.35),skin)
-		orb(pos+Vector3(side*.48,1.75,0),Vector3(.5,.13,.18),skin)
-		orb(pos+Vector3(side*.18,1.8,.33),Vector3(.18,.08,.08),Color("fc6037"),true)
-		var brow: MeshInstance3D = world._box(self,Vector3(.26,.065,.08),pos+Vector3(side*.18,1.9,.32),Color("203227"))
-		brow.rotation.z = side*.3
-	box(Vector3(.33,.04,.08),pos+Vector3(0,1.5,.35),Color("203227"),false)
-	var hat := MeshInstance3D.new()
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0
-	cone.bottom_radius = .43
-	cone.height = .85
-	hat.mesh = cone
-	hat.position = pos+Vector3(.12,2.38,0)
-	hat.rotation.z = -.3
-	hat.material_override = world._mat(Color("852c3b"))
-	add_child(hat)
-	orb(pos+Vector3(.25,2.8,0),Vector3(.2,.13,.2),Color("d6b965"))

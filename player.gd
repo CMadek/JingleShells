@@ -24,6 +24,7 @@ var world: Node3D
 var head: Node3D
 var chase: Camera3D
 var local_pilot := false
+var last_lounge_seat := -1
 var dragging_orbit := false
 var orbit_yaw := 0.23
 var orbit_elevation := 0.30
@@ -78,6 +79,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if world.stations.station_for(peer_id) != "":
 		world.stations.handle_input(event)
+		return
+	if not local_pilot and world.mess.handle_input(peer_id,event):
+		get_viewport().set_input_as_handled()
 		return
 	if local_pilot and event.is_action_pressed("pilot_view"):
 		world.toggle_pilot_view()
@@ -203,6 +207,27 @@ func keep_upright(yaw_delta: float = 0.0) -> void:
 
 func _physics_process(delta: float) -> void:
 	var station: String = world.stations.station_for(peer_id)
+	var seat: int = world.mess.seats.get(peer_id,-1)
+	if seat >= 0:
+		if last_lounge_seat != seat:
+			rotation.y = -PI/2
+			pitch = 0
+			head.rotation.x = 0
+		last_lounge_seat = seat
+		global_position = world.mess.SEATS[seat]
+		head.position.y = 1.14
+		velocity = Vector3.ZERO
+		if is_multiplayer_authority():
+			world.get_parent().sync_elf.rpc(position,rotation.y,pitch,false,true)
+		else:
+			rotation.y = net_yaw
+			head.rotation.x = net_pitch
+		return
+	if last_lounge_seat >= 0:
+		# Step out beside the cushions, clear of the coffee table.
+		position = world.mess.SEATS[last_lounge_seat] + Vector3(1.55,0,2.9 if last_lounge_seat > 0 else -2.9)
+		net_pos = position
+		last_lounge_seat = -1
 	if station != "turret":
 		keep_upright()
 	head.position.y = lerpf(head.position.y, 1.0 if crouched else 1.6, 1.0 - exp(-camera_smoothing * delta))
@@ -220,7 +245,8 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		world.get_parent().sync_elf.rpc(position,rotation.y,head.rotation.x,crouched,true)
 		return
-	Crouch.update(self, capsule_node, not Game.menu_open and world.pilot_id != peer_id and Input.is_action_pressed("crouch"))
+	var browsing: bool = world.mess.dialogue.choosing()
+	Crouch.update(self, capsule_node, not Game.menu_open and not browsing and world.pilot_id != peer_id and Input.is_action_pressed("crouch"))
 	if world.pilot_id == peer_id:
 		velocity = Vector3.ZERO
 		global_position = world.bomber.to_global(world.HELM_POS)
@@ -230,10 +256,10 @@ func _physics_process(delta: float) -> void:
 		world.send_pilot_input(v.x, -v.y, 0.0 if Game.menu_open else Input.get_axis("descend", "jump"))
 	else:
 		if is_on_floor():
-			velocity.y = JUMP_SPEED if (not Game.menu_open and Input.is_action_just_pressed("jump")) else 0.0
+			velocity.y = JUMP_SPEED if (not Game.menu_open and not world.mess.presenting and not browsing and Input.is_action_just_pressed("jump")) else 0.0
 		else:
 			velocity.y -= GRAVITY * delta
-		var input := Vector2.ZERO if Game.menu_open else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		var input := Vector2.ZERO if Game.menu_open or world.mess.presenting or browsing else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		var dir := global_transform.basis * Vector3(input.x, 0, input.y)
 		velocity.x = dir.x * (crouch_speed if crouched else WALK_SPEED)
 		velocity.z = dir.z * (crouch_speed if crouched else WALK_SPEED)

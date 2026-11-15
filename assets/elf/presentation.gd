@@ -28,6 +28,15 @@ func setup(player: CharacterBody3D) -> void:
 	add_child(model)
 	animation = model.find_child("AnimationPlayer", true, false)
 	if animation:
+		if actor.world.mess and not animation.has_animation("lounge"):
+			var sit: Animation = actor.world.mess.graphics.seated_clip.duplicate()
+			var skeleton: Skeleton3D = model.find_children("*","Skeleton3D",true,false)[0]
+			var rig_path: NodePath = animation.get_node(animation.root_node).get_path_to(skeleton)
+			for track in range(sit.get_track_count()-1,-1,-1):
+				var bone := sit.track_get_path(track).get_concatenated_subnames()
+				if skeleton.find_bone(bone) < 0: sit.remove_track(track)
+				else: sit.track_set_path(track,NodePath("%s:%s" % [rig_path,bone]))
+			animation.get_animation_library("").add_animation("lounge",sit)
 		for name in animation.get_animation_list():
 			animation.get_animation(name).loop_mode = Animation.LOOP_LINEAR if name not in ["pickup", "throw", "drop", "land"] else Animation.LOOP_NONE
 	socket = Node3D.new()
@@ -90,7 +99,9 @@ func _process(delta: float) -> void:
 	if is_instance_valid(actor.held_model):
 		actor.held_model.visible = not pilot
 	var next := "idle"
-	if actor.world.stations.station_for(actor.peer_id) == "turret":
+	if actor.world.mess.seats.has(actor.peer_id):
+		next = "lounge"
+	elif actor.world.stations.station_for(actor.peer_id) == "turret":
 		next = "crouch_idle"
 	elif pilot:
 		next = "helm"

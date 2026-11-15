@@ -115,7 +115,7 @@ func handle(id: int, action: String, rack: int, item_id: int = 0) -> bool:
 		if world.stations.occupants.delivery != id or queues[rack].is_empty(): return false
 		reserved[rack] = queues[rack][0].id
 		remaining[rack] = CYCLE_TIME
-	elif world.pilot_id == id or world.stations.station_for(id) != "": return false
+	elif world.pilot_id == id or world.stations.station_for(id) != "" or world.mess.held(id) >= 0: return false
 	elif action == "load":
 		if elf.held_kind == 0 or queues[rack].size() == CAPACITY or not sees(id,loader(rack),.60): return false
 		queues[rack].append({"id":serial,"kind":elf.held_kind})

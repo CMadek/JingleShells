@@ -125,7 +125,7 @@ func occupy(id: int, key: String) -> bool:
 		occupancy.rpc(updated)
 		return true
 	elif not occupants.has(key) or occupants[key] or current != "" or world.pilot_id == id: return false
-	elif world.players[id].held_kind != 0:
+	elif world.players[id].held_kind != 0 or world.mess.held(id) >= 0:
 		world.access.notice.rpc_id(id,"Put down your cargo before operating a station")
 		return false
 	elif aimed(id) != key: return false

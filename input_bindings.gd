@@ -20,6 +20,8 @@ const ACTIONS := {
 	"interact": ["Interact / Leave helm", KEY_E, WALK | PILOT],
 	"drop_cargo": ["Drop cargo", KEY_G, WALK],
 	"crew_primary": ["Throw cargo / Enter gun hatch", -MOUSE_BUTTON_LEFT, WALK],
+	"show_chart": ["Offer flight chart", KEY_R, WALK],
+	"mark_chart": ["Mark flight chart", -MOUSE_BUTTON_RIGHT, WALK],
 	"pilot_view": ["Switch pilot view", KEY_V, PILOT],
 	"pilot_orbit": ["Orbit chase camera", -MOUSE_BUTTON_RIGHT, PILOT],
 	"launcher_left": ["Select left launcher", KEY_1, DELIVERY],
