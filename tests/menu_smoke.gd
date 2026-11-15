@@ -15,6 +15,7 @@ func _ready() -> void:
 	assert(main.ui.tab_sections[0].visible and not main.ui.tab_sections[1].visible)
 	main.ui.number_fields.volume.value = 37
 	var next_tab := InputEventKey.new()
+	next_tab.physical_keycode = KEY_E
 	next_tab.keycode = KEY_E
 	next_tab.pressed = true
 	get_viewport().push_input(next_tab, true)

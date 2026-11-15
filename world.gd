@@ -11,6 +11,8 @@ var phase := "PREPARATION"
 const Cargo := preload("res://cargo.gd")
 const Trajectory := preload("res://cargo_trajectory.gd")
 var recipients: Node
+var district: Node3D
+var mess: Node3D
 var preview: Node3D
 const PlayerScript := preload("res://player.gd")
 const Instruments := preload("res://assets/aircraft/instruments.gd")
@@ -106,13 +108,18 @@ func _ready() -> void:
 	recipients.world = self
 	add_child(recipients)
 	_build_environment()
-	_build_village()
+	if multiplayer.is_server():
+		install_district(randi())
 	var depot := Airfield.new()
 	depot.name = "Airfield"
 	add_child(depot)
 	depot.build(self)
 	_build_bomber()
 	_build_hud()
+	mess = preload("res://crew_mess.gd").new()
+	mess.name = "CrewMess"
+	add_child(mess)
+	mess.build(self, depot)
 	preview = preload("res://delivery_preview.gd").new()
 	preview.world = self
 	add_child(preview)
@@ -222,20 +229,16 @@ func _build_environment() -> void:
 	add_child(terrain)
 
 
-func _build_village() -> void:
+@rpc("authority", "reliable")
+func install_district(seed_value: int) -> void:
+	if district != null:
+		return
 	_beam_nice = _make_beam_mat(Color(0.2, 1.0, 0.4, 0.25))
 	_beam_bad = _make_beam_mat(Color(1.0, 0.2, 0.2, 0.25))
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 12345  # same seed on every peer = same village
-	var walls := [Color(0.8, 0.7, 0.55), Color(0.65, 0.45, 0.4), Color(0.55, 0.65, 0.7), Color(0.85, 0.8, 0.7)]
-	for gx in range(-6, 7):
-		for gz in range(-10, 11):
-			if rng.randf() < 0.2:
-				continue
-			var base := Vector3(gx * 24 + rng.randf_range(-4, 4), 0, -900 + gz * 24 + rng.randf_range(-4, 4))
-			var nice := rng.randf() < 0.7
-			var col: Color = walls[rng.randi() % walls.size()]
-			_make_house(base, col, nice)
+	district = preload("res://delivery_district.gd").new()
+	add_child(district)
+	district.generate(seed_value)
+	district.build(self)
 
 
 func _make_beam_mat(c: Color) -> StandardMaterial3D:
@@ -372,7 +375,6 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	view_button = Button.new()
-	view_button.text = "Chase view [V]"
 	view_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	view_button.offset_left = -178
 	view_button.offset_top = -56
@@ -412,17 +414,21 @@ func request_players() -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
+	install_district.rpc_id(id, district.route_seed)
 	for pid in players.keys():
 		add_player.rpc_id(id, pid)
 	add_player.rpc(id)
 	sync_score.rpc_id(id, score, "")
 	for house_id in recipients.houses.size():
+		if recipients.houses[house_id].delivered:
+			mark_delivered.rpc_id(id,house_id)
 		if recipients.houses[house_id].destroyed:
 			destroy_house.rpc_id(id, house_id, recipients.houses[house_id].base, false)
 	set_pilot.rpc_id(id, pilot_id)
 	access.snapshot(id)
 	queues.snapshot(id)
 	stations.snapshot(id)
+	mess.snapshot(id)
 	emergency.set_gone.rpc_id(id,emergency.gone,false)
 	sync_bomber.rpc_id(id,bomber.position,heading,pitch,roll,speed,throttle,0.0,Vector3(in_steer,in_throttle,in_climb))
 	for pid in players:
@@ -460,6 +466,7 @@ func remove_player(id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
 	charge_start.erase(id)
 	stations.drop_peer(id)
+	mess.depart(id)
 	if pilot_id == id:
 		set_pilot.rpc(0)
 	remove_player.rpc(id)
@@ -481,6 +488,7 @@ func _helm_rpc() -> void:
 
 
 func _handle_helm(id: int) -> void:
+	if mess.held(id) >= 0 or mess.seats.has(id): return
 	if stations.station_for(id) != "": return
 	if pilot_id == 0 and players.has(id) and players[id].global_position.distance_to(bomber.to_global(HELM_POS)) < 3.5:
 		set_pilot.rpc(id)
@@ -500,7 +508,6 @@ func set_pilot(id: int) -> void:
 	if elf:
 		elf.set_local_pilot(id == me)
 	view_button.visible = id == me
-	view_button.text = "Chase view [V]"
 	in_steer = 0.0
 	in_throttle = 0.0
 	in_climb = 0.0
@@ -511,8 +518,7 @@ func toggle_pilot_view() -> void:
 		return
 	var me := multiplayer.get_unique_id()
 	if pilot_id == me and players.has(me):
-		var outside: bool = players[me].toggle_view()
-		view_button.text = "Cockpit view [V]" if outside else "Chase view [V]"
+		players[me].toggle_view()
 
 
 func send_pilot_input(steer: float, throttle: float, climb: float) -> void:
@@ -667,7 +673,7 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 		state.pitch = 0
 		state.roll = 0
 		state.grounded = true
-		state.phase = "LANDED / HOLD S TO BRAKE"
+		state.phase = "LANDED"
 	elif state.position.y > MAX_ALTITUDE:
 		state.position.y = MAX_ALTITUDE
 		state.pitch = minf(state.pitch, 0.0)
@@ -752,6 +758,7 @@ func _cargo_rpc(action: String, yaw: float, look_pitch: float, item_id: int) -> 
 
 
 func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float, item_id: int) -> void:
+	if mess.held(id) >= 0 or mess.seats.has(id): return
 	if id == pilot_id or stations.station_for(id) != "" or not players.has(id) or not is_finite(yaw) or not is_finite(look_pitch):
 		return
 	var elf = players[id]
@@ -968,9 +975,17 @@ func _resolve_impact(item_id: int, collider: Object, point: Vector3) -> void:
 			var amount: int = nice_points + (chimney_bonus if recipient.precision else 0) if house.nice else -naughty_penalty
 			var message := ("Chimney delivery!" if recipient.precision and house.nice else ("Delivered!" if house.nice else "Naughty house!")) + " %+d" % amount
 			score += amount
+			if amount > 0:
+				mess.earn(amount)
+				mark_delivered.rpc(recipient.id)
 			sync_score.rpc(score, message)
 			delivery_feedback.rpc(point, message)
 	landing_burst.rpc(point, kind)
+
+@rpc("authority", "call_local", "reliable")
+func mark_delivered(id: int) -> void:
+	if id >= 0 and id < recipients.houses.size():
+		recipients.houses[id].delivered = true
 
 @rpc("authority", "call_local", "reliable")
 func destroy_house(id: int, point: Vector3, animate: bool) -> void:
@@ -994,37 +1009,42 @@ func _process(delta: float) -> void:
 	var me := multiplayer.get_unique_id()
 	var txt := "%s | Speed %d m/s | Throttle %d%% | Altitude %d\n" % [phase,speed,throttle*100,bomber.position.y]
 	if pilot_id == me:
-		txt += "PILOTING: W/S speed, A/D turn, Space/Shift climb/dive, E to leave the helm"
-		if players.has(me) and players[me].chase.current:
-			txt += "   Hold RMB and drag to orbit"
+		var outside: bool = players.has(me) and players[me].chase.current
+		view_button.text = ("Cockpit view [{pilot_view}]" if outside else "Chase view [{pilot_view}]").format(Game.bindings.labels)
+		txt += "PILOTING: {move_forward}/{move_back} speed, {move_left}/{move_right} turn, {jump}/{descend} climb/dive, {interact} to leave the helm"
+		if outside:
+			txt += "   Hold {pilot_orbit} and drag to orbit"
 	else:
 		var elf = players.get(me)
 		if elf and elf.held_kind != Cargo.Kind.EMPTY:
-			txt += "Hold left click to throw   G to drop"
+			txt += "Hold {crew_primary} to throw   {drop_cargo} to drop"
 			if elf.charging_since >= 0:
 				var elapsed := (Time.get_ticks_msec() - int(elf.charging_since)) / 1000.0
 				txt += "   Charge: %d%%" % roundi(100 * clampf(elapsed / charge_seconds, 0, 1))
 		elif elf and aimed_loose(elf.head.global_transform) != 0:
-			txt += "E to pick up dropped cargo"
+			txt += "{interact} to pick up dropped cargo"
 		elif elf and aimed_pile(elf.head.global_transform) != Cargo.Kind.EMPTY:
-			txt += "E to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
+			txt += "{interact} to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
 		else:
-			txt += "WASD walk, Space jump, E at the helm to fly"
-	txt += "\nGreen chimney = nice, red chimney = naughty. Ctrl crouches. Esc opens the menu."
+			txt += "{move_forward}/{move_left}/{move_back}/{move_right} walk, {jump} jump, {interact} at the helm to fly"
+	txt += "\nGreen chimney = nice, red chimney = naughty. {crouch} crouches. {flight_menu} opens the menu."
 	var local_elf = players.get(me)
 	if local_elf:
 		var queue_prompt: String = queues.prompt(me)
 		if queue_prompt != "": txt += "\n"+queue_prompt
 		var station_target: String = stations.aimed(me) if queue_prompt == "" else ""
-		if station_target == "turret": txt += "\nClick — Enter gun hatch • Ctrl — Leave turret"
-		elif station_target == "delivery": txt += "\nE — Operate delivery console • Q — Leave"
-		if emergency.aimed(local_elf.head.global_transform): txt += "\nE — Emergency exit (tears door off)"
+		if station_target == "turret": txt += "\n{crew_primary} — Enter gun hatch • {turret_leave} — Leave turret"
+		elif station_target == "delivery": txt += "\n{interact} — Operate delivery console • {launcher_leave} — Leave"
+		if emergency.aimed(local_elf.head.global_transform): txt += "\n{interact} — Emergency exit (tears door off)"
 		var target: String = access.aimed(local_elf.head.global_transform)
-		if target != "": txt += "\nE — " + ("Close " if access.opened[target] else "Open ") + target
+		if target != "": txt += "\n{interact} — " + ("Close " if access.opened[target] else "Open ") + target
 	if grounded:
-		txt += "\nW throttle • Space at 18 m/s to take off • Hold S to brake"
-	hud_info.visible = stations.active_local == ""
-	hud_info.text = txt
+		txt += "\n{move_forward} throttle • {jump} at 18 m/s to take off • Hold {move_back} to brake"
+	hud_info.visible = stations.active_local == "" and not mess.dialogue.choosing()
+	hud_info.text = txt.format(Game.bindings.labels)
+	if local_elf:
+		var room_hint: String = mess.hint(me)
+		if room_hint != "": hud_info.text = room_hint.format(Game.bindings.labels)
 	if msg_timer > 0.0:
 		msg_timer -= delta
 		if msg_timer <= 0.0:
@@ -1059,6 +1079,7 @@ func begin_level() -> void:
 	if not multiplayer.is_server():
 		return
 	stations.reset()
+	mess.reset_room()
 	queues.reset()
 	set_pilot.rpc(0)
 	for id in loose.keys(): remove_loose.rpc(id)
@@ -1083,11 +1104,13 @@ func begin_level() -> void:
 
 @rpc("authority", "call_local", "reliable")
 func reset_crew() -> void:
+	mess.dialogue.close()
 	emergency.set_gone(false,false)
 	flight_audio.reset_state()
 	for id in players:
 		var elf = players[id]
 		elf.global_position = Airfield.SPAWN + Vector3((id%4)*1.1,0,(id%2)*1.1)
+		elf.last_lounge_seat = -1
 		elf.net_pos = elf.global_position
 		elf.velocity = Vector3.ZERO
 		elf.rotation = Vector3.ZERO

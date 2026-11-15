@@ -3,6 +3,7 @@ extends Node
 const DEFAULTS := {"mode": 0, "resolution": 0, "vsync": true, "fps": 120, "fov": 75.0, "volume": 80.0, "sensitivity": 1.0, "invert": false, "menu_motion": true}
 const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080)]
 var values: Dictionary = DEFAULTS.duplicate()
+var bindings := preload("res://input_bindings.gd").new()
 var menu_open := true
 var steam: Object
 var steam_ready := false
@@ -29,12 +30,7 @@ func _ready() -> void:
 	values.volume = clampf(values.volume, 0, 100)
 	values.sensitivity = clampf(values.sensitivity, 0.2, 3)
 	apply_settings()
-	for entry in [["move_forward", KEY_W], ["move_back", KEY_S], ["move_left", KEY_A], ["move_right", KEY_D], ["jump", KEY_SPACE], ["descend", KEY_SHIFT], ["interact", KEY_E], ["drop_cargo", KEY_G], ["pilot_view", KEY_V], ["crouch", KEY_CTRL]]:
-		if not InputMap.has_action(entry[0]):
-			InputMap.add_action(entry[0])
-		var event := InputEventKey.new()
-		event.physical_keycode = entry[1]
-		InputMap.action_add_event(entry[0], event)
+	bindings.apply(bindings.from_config(config))
 
 func apply_settings() -> void:
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
@@ -53,8 +49,16 @@ func apply_settings() -> void:
 	for camera in get_tree().get_nodes_in_group("local_camera"):
 		camera.fov = values.fov
 
-func save_settings() -> void:
+func save_settings(mapping: Dictionary = bindings.codes) -> Error:
 	var config := ConfigFile.new()
 	for key in values:
 		config.set_value("settings", key, values[key])
-	config.save("user://settings.cfg")
+	for action in mapping:
+		config.set_value("bindings", action, mapping[action])
+	return config.save("user://settings.cfg")
+
+func save_bindings(mapping: Dictionary) -> Error:
+	var error := save_settings(mapping)
+	if error == OK:
+		bindings.apply(mapping)
+	return error

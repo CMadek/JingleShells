@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="700" viewBox="0 0 512 700">
+<defs><pattern id="snow" width="28" height="27" patternUnits="userSpaceOnUse"><circle cx="8" cy="6" r="1.4" fill="#ddd9b4"/><circle cx="23" cy="17" r=".7" fill="#eee1bd"/></pattern>
+<pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse"><path d="M0 7L7 0" stroke="#e6dbb2" stroke-width="1" opacity=".22"/></pattern></defs>
+<path fill="#ded2a8" d="M0 0H512V700H0z"/>
+<path fill="#283e44" d="M19 18H493V681H19z"/><path fill="#537477" d="M29 28H483V440H29z"/>
+<path fill="url(#snow)" d="M29 28H483V440H29z"/>
+<circle cx="359" cy="142" r="63" fill="#efd59e"/>
+<path d="M29 401L132 216l45 68 63-105 124 174 56-94 63 88v127H29z" fill="#a9b4a1"/>
+<path d="M132 216l-18 91 19-19 9 29 18-38 17 5zM240 179l-38 89 30-16 12 20 12-27 42 16z" fill="#e7ddbc"/>
+<path d="M29 432l125-84 85 44 109-83 135 104v51H29z" fill="#36565a"/>
+<path d="M29 447l98-69 92 43 124-70 140 77v46H29z" fill="url(#hatch)"/>
+<path d="M28 476c119-47 240-25 455-131v39c-173 100-321 83-455 142z" fill="#d0bf98"/>
+<g fill="#233942" transform="rotate(-17 250 175)">
+<path d="M85 179l64-8 41-8-72-64 19-4 106 55 109-15q30-4 51 3-11 17-42 22l-95 19-70 85-24 6 42-83-64 7-44 29-13-1 23-37z"/>
+<path d="M110 178l-23-35 14-2 38 32z"/></g>
+<g fill="#e9dcba"><path d="M87 76l3 9 9 3-9 3-3 9-3-9-9-3 9-3zM411 83l2 7 7 2-7 2-2 7-2-7-7-2 7-2z"/></g>
+<path fill="#9a493c" d="M29 492h454v122H29z"/>
+
+<path d="M42 638h112m204 0h112" stroke="#c4b48d" stroke-width="2"/>
+</svg>

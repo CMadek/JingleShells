@@ -90,9 +90,9 @@ func prompt(id: int) -> String:
 	if a.is_empty(): return ""
 	if remaining[a.rack] > 0: return "Chute cycling — please wait"
 	if a.id != 0:
-		return "Empty your hands to retrieve" if world.players[id].held_kind != 0 else "E — Retrieve %s • position %d" % ["present" if a.kind == 1 else "bomb",a.index+1]
+		return "Empty your hands to retrieve" if world.players[id].held_kind != 0 else "%s — Retrieve %s • position %d" % [Game.bindings.labels.interact, "present" if a.kind == 1 else "bomb",a.index+1]
 	if queues[a.rack].size() == 5: return "Rack full • 5/5"
-	return ("E — Load held cargo" if world.players[id].held_kind else "Carry cargo here to load")+" • %d/5" % queues[a.rack].size()
+	return ("%s — Load held cargo" % Game.bindings.labels.interact if world.players[id].held_kind else "Carry cargo here to load")+" • %d/5" % queues[a.rack].size()
 
 func interact(id: int) -> bool:
 	var a := aimed(id)
@@ -115,7 +115,7 @@ func handle(id: int, action: String, rack: int, item_id: int = 0) -> bool:
 		if world.stations.occupants.delivery != id or queues[rack].is_empty(): return false
 		reserved[rack] = queues[rack][0].id
 		remaining[rack] = CYCLE_TIME
-	elif world.pilot_id == id or world.stations.station_for(id) != "": return false
+	elif world.pilot_id == id or world.stations.station_for(id) != "" or world.mess.held(id) >= 0: return false
 	elif action == "load":
 		if elf.held_kind == 0 or queues[rack].size() == CAPACITY or not sees(id,loader(rack),.60): return false
 		queues[rack].append({"id":serial,"kind":elf.held_kind})

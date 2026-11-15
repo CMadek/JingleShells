@@ -8,7 +8,7 @@ func register(root: StaticBody3D, nice: bool, chimney: StaticBody3D) -> void:
 	var id := houses.size()
 	root.set_meta("house_id", id)
 	chimney.set_meta("chimney", true)
-	houses.append({"root": root, "nice": nice, "destroyed": false, "base": root.position})
+	houses.append({"root": root, "nice": nice, "destroyed": false, "delivered": false, "base": root.position})
 
 func identify(collider: Object) -> Dictionary:
 	var node := collider as Node

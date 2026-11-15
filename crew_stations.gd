@@ -125,7 +125,7 @@ func occupy(id: int, key: String) -> bool:
 		occupancy.rpc(updated)
 		return true
 	elif not occupants.has(key) or occupants[key] or current != "" or world.pilot_id == id: return false
-	elif world.players[id].held_kind != 0:
+	elif world.players[id].held_kind != 0 or world.mess.held(id) >= 0:
 		world.access.notice.rpc_id(id,"Put down your cargo before operating a station")
 		return false
 	elif aimed(id) != key: return false
@@ -185,23 +185,26 @@ func refresh_camera() -> void:
 
 func handle_input(event: InputEvent) -> void:
 	if Game.menu_open or active_local == "": return
-	if event is InputEventKey and event.pressed and not event.echo:
-		if (active_local == "turret" and event.physical_keycode == KEY_CTRL) or (active_local == "delivery" and event.physical_keycode == KEY_Q): request("leave")
-		elif active_local == "delivery":
-			if event.physical_keycode == KEY_1: selected = 0
-			elif event.physical_keycode == KEY_2: selected = 1
-			elif event.physical_keycode == KEY_SPACE: world.queues.request("release",selected)
+	if active_local == "delivery":
+		if event.is_action_pressed("launcher_leave"): request("leave")
+		elif event.is_action_pressed("launcher_left"): selected = 0
+		elif event.is_action_pressed("launcher_right"): selected = 1
+		elif event.is_action_pressed("launcher_release"): world.queues.request("release", selected)
+		return
+	if event.is_action_pressed("turret_leave"):
+		request("leave")
+		return
 	if active_local == "turret" and climb_time <= 0:
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
-			turret_free_look = event.pressed
-			if not event.pressed: look_offset = Vector2.ZERO
+		if event.is_action_pressed("turret_look") or event.is_action_released("turret_look"):
+			turret_free_look = event.is_action_pressed("turret_look")
+			if not turret_free_look: look_offset = Vector2.ZERO
 		if event is InputEventMouseMotion and turret_free_look:
 			look_offset.x = clampf(look_offset.x-event.relative.x*.0022,-1.5,1.5)
 			look_offset.y = clampf(look_offset.y-event.relative.y*.0022,-.8,.8)
 		elif event is InputEventMouseMotion:
 			desired_yaw = wrapf(desired_yaw-event.relative.x*.0022*Game.values.sensitivity,-PI,PI)
 			desired_pitch = clampf(desired_pitch-event.relative.y*.0022*Game.values.sensitivity*(-1 if Game.values.invert else 1),deg_to_rad(-80),deg_to_rad(20))
-		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		elif event.is_action_pressed("turret_fire"):
 			if multiplayer.is_server(): fire(1,desired_yaw,desired_pitch)
 			else: fire_remote.rpc_id(1,desired_yaw,desired_pitch)
 
@@ -301,7 +304,7 @@ func _physics_process(delta: float) -> void:
 	text.position.y = get_viewport().get_visible_rect().size.y-155
 	ui.visible = active_local != "" and not Game.menu_open
 	reticle.visible = active_local == "turret" and not turret_free_look
-	text.text = "BELLY GUN • Mouse: aim all directions • Left click: fire • Hold RMB: look around • Ctrl: climb out\nShots into the aircraft or ground are blocked" if active_local == "turret" else "CARGO LAUNCHERS • 1: LEFT • 2: RIGHT • Space: release • Q: leave\nBoth launchers are operated here.\n"
+	text.text = "BELLY GUN • Mouse: aim all directions • {turret_fire}: fire • Hold {turret_look}: look around • {turret_leave}: climb out\nShots into the aircraft or ground are blocked".format(Game.bindings.labels) if active_local == "turret" else "CARGO LAUNCHERS • {launcher_left}: LEFT • {launcher_right}: RIGHT • {launcher_release}: release • {launcher_leave}: leave\nBoth launchers are operated here.\n".format(Game.bindings.labels)
 	if active_local == "delivery":
 		for rack in 2:
 			var names: Array[String] = []

@@ -14,11 +14,15 @@ Developed with Godot 4.7.2. Multiplayer requires GodotSteam and SteamMultiplayer
 4. Friends choose **Play → Join Game**, paste the lobby ID, and select Join, or accept a Steam friend invite while at the menu.
 5. Use separate Steam accounts on two machines for multiplayer testing. The former IP/UDP-port workflow is no longer used.
 
-The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-16`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-17`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
 
 ## Airfield preparation and takeoff
 
-Each session starts inside The Naughty List supply depot. The evil quartermaster is decorative; purchasing is a future feature and the current supplies are free. Follow the flight-line signs and board the North Star. A wide passage through the former rear bulkhead leads to a separate windowless cargo room. Six bombs sit on a low rack on the left and six presents on a low rack on the right, leaving the centre clear; collect them with E and drop them with G. The shop remains a placeholder.
+Each lobby starts at The Last Stop, a fixed departure lounge beside the runway. Sit on a couch cushion, pick up the flight chart, or toss mugs, cushions and practice parcels. A parcel through the practice chimney rings the bell, rolls back down the chute and records the crew’s longest basket. Talk to the quartermaster to hear a story or see what’s for sale. The clerk can hand you a wrapped present for delivery or issue the whole crew a throwing mitt or quick sling. The mitt increases throw speed and the sling shortens charge time. The crew starts with 12 shared vouchers and earns more from successful gift deliveries. Upgrades and records last for the lobby.
+
+The host chooses a fresh seed for the first delivery district. Roads, house locations, nice/naughty assignments, Frostmere and the relay light all derive from it. Late joiners reconstruct that district before receiving its delivery history. Resetting the aircraft keeps the district. The chart on the coffee table renders from the placed world objects, including live aircraft heading, crew, loose cargo and delivered or destroyed houses. Read it with your primary action, mark it with the chart-mark action, offer it for handoff or set it down. All shortcuts appear in Settings → Controls.
+
+Follow the exit signs and board the North Star. A wide passage through the former rear bulkhead leads to a windowless cargo room. Six bombs sit on a low rack on the left and six presents on a low rack on the right, leaving the centre clear.
 
 Aim at the boarding door or its brass switch and press E from either side. The curved boarding door closes flush with the outside fuselage and swings outward, clear of the stairs. Mk II replaces the open delivery hatch with guarded dual chutes and a continuous cabin floor. Boarding stairs stay at the airfield when the aircraft departs; there is no attached ramp. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots. Fitted shell and floor collision lets crew walk up to the visible interior walls and remain aboard near them.
 
@@ -58,6 +62,8 @@ The main menu contains Play, Options, How to Play, Credits, and Exit, with decor
 Options save to `user://settings.cfg`: window mode/resolution, VSync, frame limit, field of view, master volume, mouse sensitivity, and invert look. Apply commits changes; Cancel discards edits; Restore Defaults selects defaults that still need Apply. Display changes require confirmation within 15 seconds or revert. There are no separate music/SFX controls because the project does not currently define those buses. UI uses responsive containers and scrolling rather than a separate UI-scale setting.
 
 ## Controls
+
+Settings → Controls lets you select an action and press a physical key or mouse button to rebind it. Esc cancels capture. Bindings save immediately to `user://settings.cfg`, independently of Apply and Cancel. Use **Reset key bindings** to restore the defaults below. A button can serve different actions in separate crew roles. Settings tab shortcuts use the keyboard.
 
 | Key | Walking | At the helm |
 |---|---|---|
