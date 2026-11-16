@@ -80,6 +80,10 @@ tip = rig.data.edit_bones.new('MugSteam')
 tip.head = (0,0,.15)
 tip.tail = (0,0,.20)
 tip.parent = mug
+tip = rig.data.edit_bones.new('SmokeTip')
+tip.head = smoke_origin
+tip.tail = smoke_origin + Vector((0,0,.04))
+tip.parent = rig.data.edit_bones['Head']
 bpy.ops.object.mode_set(mode='OBJECT')
 
 targets = {}

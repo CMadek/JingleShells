@@ -39,6 +39,22 @@ func _ready() -> void:
 	for i in range(120): audio.update_audio(1.0/60)
 	check(audio.wind.playing and audio.gains[audio.wind] > .01 and audio.gains[audio.wind] < .16,"Airspeed produces quieter wind")
 	check(not audio.runners.playing,"Runner rumble fades after takeoff")
+	w.afterburner_held = true
+	for i in 90: audio.update_audio(1.0/60)
+	check(events.get("afterburner_ignite",0) == 1 and audio.burner.playing and audio.gains[audio.burner] > .1,
+		"A held burst ignites once and adds sustained engine roar")
+	w.afterburner_held = false
+	for i in 150: audio.update_audio(1.0/60)
+	check(not audio.burner.playing and audio.engine.playing, "Releasing the burner fades its roar back to the engine")
+	w.last_flight_packet = 0
+	w.sync_bomber(w.bomber.position,0,0,0,76,.5,0,Vector4(0,0,0,1),w.CRUISE_OFF,false,true,0,false,.3,false)
+	audio.update_audio(.1)
+	check(audio.burner.playing and events.get("afterburner_ignite",0) == 1, "Joining an established burn restores its loop without replaying ignition")
+	w.last_flight_packet = 0
+	w.sync_bomber(w.bomber.position,0,0,0,76,.5,0,Vector4(0,0,0,1),w.CRUISE_OFF,false,true,0,false,.95,true)
+	for i in 150: audio.update_audio(1.0/60)
+	check(not audio.burner.playing and audio.engine.playing and events.get("afterburner_ignite",0) == 1,"A locked engine retains its ordinary engine sound when a player joins")
+	w.afterburner_held = false
 	w.bomber.position.y = w.MIN_ALTITUDE
 	w.grounded = true
 	audio.update_audio(.1)
@@ -60,7 +76,6 @@ func _ready() -> void:
 	w.bomber.position.y = 30
 	w.speed = w.MAX_SPEED
 	w.access.set_state("door",false,0)
-	w.emergency.set_gone(false,false)
 	audio.update_audio(.1)
 	check(not audio.wind.playing and is_zero_approx(audio.gains[audio.wind]),"Closed exterior doors silence wind even with the legacy hatch open")
 	w.access.set_state("door",true,.25)
@@ -70,16 +85,9 @@ func _ready() -> void:
 	w.access.set_state("door",true,1)
 	for i in 120: audio.update_audio(1.0/60)
 	check(audio.gains[audio.wind] > partial_wind*2,"Wind increases as the boarding door opens")
-	w.emergency.set_gone(true,false)
 	w.access.set_state("door",false,0)
 	audio.update_audio(.1)
-	check(audio.wind.playing,"Open emergency exit keeps wind playing when boarding door closes")
-	w.emergency.set_gone(false,false)
-	audio.update_audio(.1)
-	check(not audio.wind.playing and is_zero_approx(audio.gains[audio.wind]),"Closing both exterior doors stops wind without a lingering loop")
-	w.emergency.set_gone(true,false)
-	for i in 120: audio.update_audio(1.0/60)
-	check(audio.wind.playing and audio.gains[audio.wind] > .001,"Emergency exit alone starts wind from silence")
+	check(not audio.wind.playing and is_zero_approx(audio.gains[audio.wind]),"Closing the boarding door silences exterior wind")
 	w.landing_burst(Vector3(0,0,-900),w.Cargo.Kind.BOMB)
 	w.landing_burst(Vector3(1,0,-900),w.Cargo.Kind.PRESENT)
 	check(events.get("bomb",0) == 1 and events.get("present",0) == 1,"Existing replicated cargo effects play distinct sounds")
@@ -90,7 +98,7 @@ func _ready() -> void:
 	check(voices <= 8,"Impact pool stays bounded")
 	w.begin_level()
 	audio.update_audio(.1)
-	check(not audio.engine.playing and not audio.landing.playing,"Level reset stops old audio without a false landing")
+	check(not audio.engine.playing and not audio.landing.playing and not audio.ignition.playing and not audio.burner.playing,"Level reset stops old audio without a false landing")
 	check(events.get("touchdown",0) == 1,"Reset does not replay landing")
 	main._return_to_menu("Audio smoke complete")
 	await get_tree().process_frame

@@ -55,6 +55,22 @@ func _ready() -> void:
 	var repaired := Game.bindings.from_config(config)
 	check(repaired.launcher_leave == KEY_Q and repaired.turret_leave == KEY_CTRL and repaired.move_forward == KEY_W and repaired.jump == KEY_SPACE, "Invalid, conflicting, and missing bindings recover")
 	check(repaired.pilot_orbit == KEY_B, "Recovery retains unrelated custom bindings")
+	config.erase_section_key("bindings", "cruise_hold")
+	config.set_value("bindings", "descend", KEY_C)
+	repaired = Game.bindings.from_config(config)
+	check(repaired.descend == KEY_C and repaired.cruise_hold != KEY_C
+		and Game.bindings.conflict("cruise_hold", repaired.cruise_hold, repaired) == "",
+		"Existing pilots keep custom C bindings when cruise hold is added")
+	config.erase_section_key("bindings", "aerobatics")
+	config.set_value("bindings", "pilot_view", KEY_R)
+	repaired = Game.bindings.from_config(config)
+	check(repaired.pilot_view == KEY_R and Game.bindings.conflict("aerobatics", repaired.aerobatics, repaired) == "",
+		"Existing pilots keep a custom R binding when aerobatics is added")
+	config.erase_section_key("bindings", "afterburner")
+	config.set_value("bindings", "move_forward", KEY_F)
+	repaired = Game.bindings.from_config(config)
+	check(repaired.move_forward == KEY_F and Game.bindings.conflict("afterburner", repaired.afterburner, repaired) == "",
+		"Adding afterburner preserves a pilot's previous F binding")
 
 	main.operation = "host"
 	main.multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()

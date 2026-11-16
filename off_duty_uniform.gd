@@ -1,6 +1,6 @@
 extends RefCounted
 
-static func dress(actor: Node3D, clip: String, color: Color, expression: String) -> Array[Dictionary]:
+static func dress(actor: Node3D, clip: String, color: Color, expression: String, smoking := false) -> Array[Dictionary]:
 	var blink_targets: Array[Dictionary] = []
 	for node in actor.find_children("*", "MeshInstance3D", true, false):
 		for index in node.mesh.get_blend_shape_count():
@@ -26,7 +26,9 @@ static func dress(actor: Node3D, clip: String, color: Color, expression: String)
 				# Matte wool: the nearby lantern otherwise washes sleeve folds cream.
 				coat.set_shader_parameter("cloth_specular", 0.0)
 				node.set_surface_override_material(surface, coat)
-			elif clip != "menu_sit" and material and material.resource_name.begins_with("Candy cane"):
+			elif (clip != "menu_sit" or smoking) and material and material.resource_name.begins_with("Candy cane"):
+				node.hide()
+			elif not smoking and material and material.resource_name.begins_with("Cigarette"):
 				node.hide()
 			elif clip != "menu_cocoa" and material and material.resource_name.begins_with("Cocoa"):
 				node.hide()

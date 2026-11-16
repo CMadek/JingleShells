@@ -4,6 +4,7 @@ var route_seed: int
 var sites: Array[Dictionary] = []
 var roads: Array[PackedVector3Array] = []
 var landmarks := {}
+var groves := PackedVector3Array()
 var bounds := Rect2()
 var town: String
 const WALLS := [Color("ccad89"), Color("a96958"), Color("819ca7"), Color("d6c5ae")]
@@ -43,8 +44,42 @@ func generate(value: int) -> void:
 	for point: Vector3 in landmarks.values():
 		bounds = bounds.expand(Vector2(point.x, point.z))
 	bounds = bounds.grow(40)
+	# Sight references beside the approach, clear of the runway, depot and district.
+	for z in range(725,ceili(bounds.end.y)+55,-73):
+		var side := 1 if groves.size() % 2 == 0 else -1
+		groves.append(Vector3(side * rng.randf_range(52,110),0,z + rng.randf_range(-12,12)))
+
+func _build_groves(w: Node3D) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = route_seed
+	var leaves: Array[Transform3D] = []
+	var snow: Array[Transform3D] = []
+	var body := StaticBody3D.new()
+	add_child(body)
+	var crown := ConvexPolygonShape3D.new()
+	var points := PackedVector3Array([Vector3.UP])
+	for j in 8:
+		points.append(Vector3(.25*cos(TAU*j/8),0,.25*sin(TAU*j/8)))
+	crown.points = points
+	for grove in groves:
+		for tree in rng.randi_range(6,11):
+			var base := grove + Vector3(rng.randf_range(-15,15),0,rng.randf_range(-22,22))
+			var height := rng.randf_range(6,13)
+			for tier in 3:
+				var radius := height * (.26 - tier*.05)
+				var basis := Basis.IDENTITY.scaled(Vector3(radius,height*.52,radius))
+				var center := base + Vector3.UP * height * (.27 + tier*.22)
+				leaves.append(Transform3D(basis,center))
+				snow.append(Transform3D(basis.scaled(Vector3.ONE*.79),center+Vector3.UP*height*.08))
+			var trunk := CollisionShape3D.new()
+			trunk.shape = crown
+			trunk.transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*height),base)
+			body.add_child(trunk)
+	preload("res://assets/materials/fir_batch.gd").add_tiers(self,leaves,w._mat(Color("284f49")))
+	preload("res://assets/materials/fir_batch.gd").add_tiers(self,snow,w._mat(Color("aec4cb")))
 
 func build(w: Node3D) -> void:
+	_build_groves(w)
 	# Merge road ribbons into one surface, just above the existing level snow.
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)

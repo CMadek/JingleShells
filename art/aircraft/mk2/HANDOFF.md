@@ -1,16 +1,14 @@
 # North Star Mk II
 
 The aircraft uses a 9.6 m wide, 7.4 m deep cargo shell with rounded rectangular sections, thick curled-tip wings and one oversized fin. A continuous
-carpeted deck replaces the old drop hole; the gunner enters through a hatch beside the stairs (x 1.9, y 0.78, z −5.48), below the sealed pilot deck. Two enclosed return tracks occupy the cabin
-sides, leaving a 3.39 m aisle between their collision volumes. Rear stores and the
-windowless emergency-exit room remain accessible through the aft passage.
+carpeted deck runs from the cockpit stairs to the rear stores. The gunner enters through a hatch beside the stairs (x 1.9, y 0.78, z −5.48). A port-side CRT and chart board face the aisle. The two roller tracks feed aft to outlets at x ±2.92, z 5.90. The main rack bodies leave a 4.68 m aisle. The vaulted cabin lining, raised cockpit ceiling and aft sidewalls have fitted collision.
 
 ## Editable assets
 
 - `art/aircraft/north_star.blend`: editable complete aircraft and named mechanisms.
 - `art/aircraft/build.py`: deterministic Blender entry point.
-- `art/aircraft/mk2.py`: tracks, rollers, guards, console furniture, ventral turret,
-  ivory accents and leather grips.
+- `art/aircraft/mk2.py`: cargo tracks, rollers, guards, loading trays and shutters.
+- `art/aircraft/dispatch_terminal.py`: computer cabinet, keyboard, CRT and corkboard.
 - `art/aircraft/mk2/layout.svg`: annotated cabin blockout in Godot coordinates.
 - `assets/aircraft/north_star.glb`: batched Godot aircraft, with named pivot nodes.
 - `art/aircraft/rounded.py`: rounded fuselage, wings, nacelles, oversized central fin and extended runner supports.
@@ -20,9 +18,9 @@ windowless emergency-exit room remain accessible through the aft passage.
 
 Rebuild with `blender --background --python art/aircraft/build.py`, then import in
 Godot. Blender +Y is forward/+Z up; Godot −Z is forward/+Y up. Scale is metres.
-Named empty pivots survive export with `_rig` suffixes: BoardingDoor, EmergencyDoor, EngineFanL/R,
+Named empty pivots survive export with `_rig` suffixes: BoardingDoor, EngineFanL/R,
 Rack0/1Slot1–5, Rack0/1LoadingPoint, ChuteShutter0/1, ChuteOutlet0/1,
-DeliveryControls, VentralControls, GunnerHatch, VentralYaw, VentralPitch, SnowballMuzzle, GunnerEye, GunnerSeat.
+DeliveryControls, TerminalScreen, ChartBoard, VentralControls, GunnerHatch, VentralYaw, VentralPitch, SnowballMuzzle, GunnerEye, GunnerSeat.
 Static meshes batch by material. Cabin and boarding-door collision follow the generated shell and fitted floors; simplified boxes remain for the external wings, engines, runners and selected furnishings.
 
 Checked screenshots are saved in `art/aircraft/mk2/previews/`, including exterior
@@ -86,7 +84,7 @@ The two-process ENet harness is `tests/mk2_network.tscn`, with `-- --host` and
 `-- --client` on localhost port 28764. Connection did not complete in this execution
 environment; no successful live network validation is claimed.
 
-Before release, test with two Steam accounts on the same build (protocol 16):
+Before release, test with two Steam accounts on the same build (protocol 22):
 
 1. Host and join; load both racks with alternating types. Have both players load
    the fifth position together: only one succeeds and the loser keeps their item.

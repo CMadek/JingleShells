@@ -48,3 +48,13 @@ write('latch',.32,(t,l,h)=>h*Math.exp(-t*35)+sin(145,t)*.35*Math.exp(-t*22)+sin(
 write('touchdown',1.2,(t,l,h)=>sin(47,t)*Math.exp(-t*8)+l*2*Math.exp(-t*5)+h*.2*Math.exp(-t*14));
 write('bomb_burst',1.7,(t,l,h)=>l*3*Math.exp(-t*3.5)+h*.45*Math.exp(-t*9)+sin(38,t)*.3*Math.exp(-t*5));
 write('present_pop',.6,(t,l,h)=>h*Math.exp(-t*18)+sin(880,t)*.12*Math.exp(-t*9)+sin(1320,t)*.08*Math.exp(-t*10));
+// A pressure thump opens into the same low rumble and air hiss as the sustained jet.
+write('afterburner_ignite',.60,(t,l,h)=>{
+  const thump = Math.sin(2*Math.PI*(49*t+1.15*(1-Math.exp(-t*22))))*Math.exp(-t*12);
+  const rush = (1-Math.exp(-t*32))*Math.exp(-t*6);
+  return thump*.75 + (l*2.8+h*.85+sin(167,t)*.18)*rush;
+});
+write('afterburner_loop',3,(t,l,h)=>{
+  const rumble = sin(73,t)*.22 + sin(109,t)*.13 + sin(219,t)*.055;
+  return (rumble + l*3.2 + h*.72)*(1+.075*sin(13,t)+.045*sin(19,t));
+},true);

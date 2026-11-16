@@ -81,7 +81,7 @@ def mounted(part, axis):
 scales=[
     ("Power","PWR %","0","100"),
     ("Pitch","PITCH","-35","+35"),
-    ("Speed","M/S","0","45"),
+    ("Speed","M/S","0","90"),
     ("Heading","HDG","W","E"),
     ("Altitude","ALT M","0","1800"),
     ("Bank","BANK","-45","+45"),
@@ -104,6 +104,33 @@ for i,(name,caption,low,high) in enumerate(scales):
         label("Scale mark",mark,(x+side*.39*r,5.757,z),(pi/2,0,0),.019,cream)
     if name=="Heading":
         label("North index","N",(x,5.757,.86+.39*r),(pi/2,0,0),.022,cream)
+
+# A hooded exhaust-temperature gauge sits on the coaming in the pilot's sightline.
+box("Burner gauge housing",(.44,5.991,1.256),(.84,.196,.284),iron,.026)
+box("Burner gauge brass rim",(.44,5.887,1.257),(.817,.024,.255),gold,.018)
+box("Burner gauge inset",(.44,5.870,1.257),(.798,.019,.236),pine,.012)
+box("Burner annunciator well",(.667,5.854,1.330),(.276,.018,.063),iron,.006)
+label("Burner dial title","BURNER HEAT",(.27,5.855,1.332),(pi/2,0,0),.055,cream)
+pivot("BurnerStatus",(.667,5.840,1.331))
+cold,limit=.094,.786
+gauge_z=1.245
+cool_ink=mat("Cool-range mint enamel",(.19,.54,.32),.02,.53)
+warning_ink=mat("Heat-warning amber enamel",(.96,.39,.045),.02,.53)
+for start,end,color in [(0,.35,cool_ink),(.35,.75,cream),(.75,.94,warning_ink),(.94,1,red)]:
+    left=cold+(limit-cold)*start
+    right=cold+(limit-cold)*end
+    box("Thermal scale band",((left+right)/2,5.855,gauge_z),(right-left,.012,.022),color,.002)
+for i in range(11):
+    x=cold+(limit-cold)*i/10
+    line("Heat graduation",[(x,5.847,gauge_z-.014),(x,5.847,gauge_z-.025)],.0024,cream)
+for fraction,caption in [(0,"0"),(.35,"RESET"),(1,"100")]:
+    x=cold+(limit-cold)*fraction
+    label("Burner scale legend",caption,(x,5.850,1.174),(pi/2,0,0),.037,cream)
+    line("Burner scale index",[(x,5.843,1.202),(x,5.843,gauge_z-.011)],.0035,cream)
+heat_axis=pivot("BurnerHeatNeedle",(cold,5.833,gauge_z))
+pivot("BurnerHeatLimit",(limit,5.833,gauge_z))
+mounted(loft("Heat pointer",[[(cold+dx,y,gauge_z+dz) for dx,dz in [(-.016,.039),(.016,.039),(0,-.006)]]
+                            for y in (5.826,5.836)],cream),heat_axis)
 
 # An eight-spoke wheel with turned grips, a laminated rim and brass inlay.
 cx,cy,cz=0,5.52,.63

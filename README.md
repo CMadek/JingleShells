@@ -14,7 +14,9 @@ Developed with Godot 4.7.2. Multiplayer requires GodotSteam and SteamMultiplayer
 4. Friends choose **Play → Join Game**, paste the lobby ID, and select Join, or accept a Steam friend invite while at the menu.
 5. Use separate Steam accounts on two machines for multiplayer testing. The former IP/UDP-port workflow is no longer used.
 
-The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-17`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-22`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+
+For a solo flight trial, open `tests/flight_practice.tscn` and press **F6**. You start at the runway helm with a present in each launcher and the flight chart pinned next to the delivery terminal. This scene runs the lobby flight model offline.
 
 ## Airfield preparation and takeoff
 
@@ -26,13 +28,21 @@ Follow the exit signs and board the North Star. A wide passage through the forme
 
 Aim at the boarding door or its brass switch and press E from either side. The curved boarding door closes flush with the outside fuselage and swings outward, clear of the stairs. Mk II replaces the open delivery hatch with guarded dual chutes and a continuous cabin floor. Boarding stairs stay at the airfield when the aircraft departs; there is no attached ramp. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots. Fitted shell and floor collision lets crew walk up to the visible interior walls and remain aboard near them.
 
-At the helm: W raises throttle, S lowers it and applies ground brakes, A/D steers, Space raises the nose, and Shift lowers it. Reach 18 m/s and hold Space to take off. The boarding door stays under crew control: open, close, or reverse it with E at any speed, including in flight. Obstructions display a prompt. Touchdown levels the sleigh on its runners; hold S to stop. The original airborne flight model, animated instruments, V camera toggle, and chase orbit are retained. Flat-ground landing is arcade-style, without a crash/damage simulation. Low flight no longer causes the altitude clamp; out-of-world travel resets preparation.
+**Flight assist is on at the start of each sortie.** Use **W/S** to set the throttle and hold **Space** at 18 m/s to lift off. **A/D** commands a coordinated turn. Release steering and pitch to level the wings and nose. In level flight, half throttle gives about 22 m/s for deliveries and full throttle gives about 53 m/s.
 
-The runway is 1,200 m long and 52 m wide, clear of the village, with threshold markings and edge lights. Local checks measured about 43 m to lift off starting with an open door (including automatic closure) and 67 m to stop from the 45 m/s maximum. Approach speed and throttle affect stopping distance.
+Hold **F** in the air to ignite the afterburner in either flight mode. The engines roar and the aircraft accelerates toward 82 m/s. Release **F** to coast back to the speed set by the throttle lever. Boosting disengages cruise hold. The burner cuts when the pilot leaves the helm.
 
-If everyone leaves a moving aircraft for more than three seconds, the host gradually reduces throttle, levels into a descending glide, and brakes after touchdown. This clears a fallen pilot's helm claim and prevents an abandoned powered climb from continuing indefinitely. Any crew member still in the cabin or an occupied belly station keeps normal cruise active; reboarding cancels recovery. This uses the existing arcade stall/sink model and does not add a rigid-body aircraft simulation. Boarding stairs still stay at the depot, so an off-runway boarding aid would be a separate feature. `tests/flight_recovery_smoke.tscn` covers recovery, grace, crew/station occupancy, braking, and reset; delayed cargo prediction still shares the same flight step.
+The cockpit’s **BURNER HEAT** gauge warns **EASE OFF** at 75% heat, six seconds into a continuous burst from cold. Release early and you can boost again immediately with the remaining headroom. At eight seconds the burner trips and the dash reads **COOLING**. It takes 5.2 seconds to cool to the **RESET** mark at 35%. If you are still holding boost, the dash asks you to **RELEASE**. Once it reads **READY**, press boost again. Chase view repeats the heat percentage and status.
 
-World.begin_level() is the host hook for future mission progression: it clears cargo and resets the aircraft and crew to preparation. It is not connected to an automatic next-mission trigger. Joining players start in the depot. Protocol 4 requires matching builds.
+Press **R** for aerobatics. **A/D** rolls the wings and **Space/Shift** pitches through a loop. Bank and pull to turn, or hold roll and pitch together for a barrel roll. Release both to hold the current attitude. Holding **S** while pulling tightens a turn and costs speed. **R** toggles assist back on. **V** switches between cockpit and chase view. **E** leaves the helm and restores assist.
+
+In flight at **14 m/s or faster**, release the flight controls and press **C** to capture heading and altitude. The HUD shows the held compass course and height. Press **E** to leave the helm and load or operate a launcher. The next pilot can take the helm and inspect the course before steering, changing pitch or moving the throttle. Any of those inputs, or pressing **C** again at the helm, disengages hold. Cruise uses the current throttle and flies straight ahead. Pick a clear course and keep enough power for the pass. Below 14 m/s the hold drops out and the HUD warns of low airspeed. Add throttle to recover lift.
+
+The runway is 1,200 m long and 52 m wide, clear of the village, with threshold markings and edge lights. Approach speed and throttle affect stopping distance.
+
+If everyone leaves a moving aircraft for three seconds, the host cancels cruise hold, gradually reduces throttle, glides down and brakes after touchdown. A walking crew member or an occupied belly station keeps an engaged hold flying. Reboarding ends the unattended recovery. The cargo sight forecasts the same bank, pitch and cruise corrections as the host.
+
+World.begin_level() is the host hook for future mission progression: it clears cargo and resets the aircraft and crew to preparation. It is not connected to an automatic next-mission trigger. Joining players start in the depot.
 
 Run tests/airfield_smoke.tscn with Godot for onboard present/bomb pickup, actual walking/boarding, cargo unloading, ground/aboard movement, received flight poses, split-hatch motion, cargo passing through the opening, occupancy/snapshots, E-operated door closure while taxiing, helm interaction, takeoff with the door open, stationary boarding stairs and walkable cockpit steps, original cabin aisle clearance, individual shelf pickup and cargo support, landing, braking, instruments, and level reset. With --rendering-method gl_compatibility it saves airfield, boarding, and shop previews under .test-data; --headless runs assertions only. Existing menu and elf smoke scenes cover camera/menu integration, belly-station access, crouching, and models. Two-account Steam testing remains required, particularly late joining during a hatch animation and loading/flying/landing together.
 
@@ -40,7 +50,7 @@ The editable North Star build now runs art/aircraft/access.py before export to c
 
 ## Flight and mechanical sounds
 
-The aircraft has throttle-responsive engine pitch and volume, speed-dependent wind, runner rumble while taxiing, a touchdown thump, door/hatch motors and endpoint latches, and distinct bomb/present impacts. Engine, wind, runner and touchdown levels use a quieter mix, with further attenuation inside the cabin. The departure bell has been removed. Sounds are positional and use the existing master volume/mute setting. Engines start quiet while parked. Wind plays only while the boarding door or rear emergency exit is open, scales with airspeed and the opening, and stops when both exterior doors are closed.
+The aircraft has throttle-responsive engine pitch and volume, speed-dependent wind, runner rumble while taxiing, a touchdown thump, door/hatch motors and endpoint latches, and distinct bomb/present impacts. Engine, wind, runner and touchdown levels use a quieter mix, with further attenuation inside the cabin. The departure bell has been removed. Sounds are positional and use the existing master volume/mute setting. Engines start quiet while parked. Cabin wind scales with airspeed and the boarding door opening, and stops when the door closes.
 
 Continuous sounds follow replicated flight and access state on each peer. Cargo sounds use the existing host-authorized impact RPC. One-shots use a bounded pool; resetting a level stops old effects, and leaving the world frees every audio source. Old landing/latch sounds are not replayed on initial join.
 
@@ -59,7 +69,9 @@ rapid reconnect/disconnect and cleanup.
 
 The main menu contains Play, Options, How to Play, Credits, and Exit, with decorative snowfall and a transparent title logo. Escape opens a compact flight menu with Resume, session sharing, options, help, and confirmed leave/exit actions. The online world keeps running; local movement, look, cargo, and flight input are suppressed while the menu is open.
 
-Options save to `user://settings.cfg`: window mode/resolution, VSync, frame limit, field of view, master volume, mouse sensitivity, and invert look. Apply commits changes; Cancel discards edits; Restore Defaults selects defaults that still need Apply. Display changes require confirmation within 15 seconds or revert. There are no separate music/SFX controls because the project does not currently define those buses. UI uses responsive containers and scrolling rather than a separate UI-scale setting.
+Settings save to `user://settings.cfg`. Graphics offers a 30–360 FPS target (120 by default). Check **Unlock FPS** to remove the game’s cap. Unchecking it restores your last target. VSync can still limit the frame rate to your display’s refresh rate. Windowed mode lets you choose a resolution. Borderless and fullscreen use the desktop resolution.
+
+Apply saves changes to graphics, volume, menu animation and mouse look. Cancel discards edits, and Restore Defaults takes effect on Apply. Window changes revert unless confirmed within 15 seconds. Key bindings save immediately. The settings menu supports scrolling and keyboard navigation.
 
 ## Controls
 
@@ -67,9 +79,12 @@ Settings → Controls lets you select an action and press a physical key or mous
 
 | Key | Walking | At the helm |
 |---|---|---|
-| WASD | walk | W/S speed, A/D turn |
+| WASD | walk | W/S throttle, A/D roll (steer in assist) |
 | Space | jump | climb |
 | Shift | - | dive |
+| R | offer chart | toggle aerobatics / flight assist |
+| F (hold) | - | afterburner |
+| C | - | toggle cruise hold |
 | E | look at a nearby supply pile to pick up one item, or stand by the console to take the helm | leave |
 | Left mouse | hold to charge, release to throw along the crosshair | - |
 | G | drop the held item | - |
@@ -139,17 +154,13 @@ House identity, recipient state and effects live in `house_delivery.gd`; shape s
 
 Validation: run `godot --path . --rendering-method gl_compatibility res://tests/delivery_smoke.tscn`. It covers swept roof/wall/chimney/ground impacts, actual falling-body prediction agreement, scoring once, penalties/bonuses, bomb destruction, repeated events, ruined-house ineligibility, and silent snapshot application. It saves `user://delivery-destruction.png`. These are local automated checks, not proof of two-account Steam networking. Before release, test concurrent players, late joins after destruction, and prediction while flying/banking at several altitudes on two machines.
 
-The aft room has a side emergency exit behind the bomb rack. Press E at its handle to tear the door off and fling it outside. It stays open for the level, restores on level reset, and late joiners receive its current state without replaying debris. The front boarding door and delivery hatch retain their normal controls.
-
 ## North Star Mk II crew stations
 
-The cabin now has two five-item return tracks feeding independent enclosed underside
-chutes. Load held cargo with E at a track's loading end; with empty hands, aim at any
-queued item and E retrieves that item. Reloading moves it to the tail. Numbers 1–5,
-NEXT, and arrows show FIFO order. A busy or full rack never consumes held cargo.
+Two roller tracks feed outboard chutes just forward of the rear stores. Load held cargo at the forward trays with **Interact** (default **E**). With empty hands, aim at a queued item and use **Interact** to retrieve it. Each track holds five items. The first item is marked **1 • NEXT** beside the shutter.
 
-At the delivery console (port side, forward of the racks), E enters; 1/2 select a
-chute, Space releases one item, Q leaves. The underside view shows both outlets and
+Bring the flight chart from the lounge and use **Interact** on the corkboard beside the port-side terminal to pin it. The whole crew can follow the live chart. Use the primary action to read it, the chart-mark action to pencil in a waypoint, or **Interact** with empty hands to take it down.
+
+The green CRT shows both cargo counts. Use **Interact** at the keyboard to operate it. By default **1/2** select a chute, **Space** releases one item, and **Q** leaves. The underside view shows both outlets and
 labeled circular first-impact estimates: L/single ring, R/double ring. Empty chutes
 hide their estimate. Blocked outlets preserve the queue. Cargo remains ballistic.
 
@@ -168,7 +179,7 @@ asset pivots, checks and exact two-account test steps.
 
 ## Rounded North Star
 
-The cabin has fitted spruce carpet with a cranberry aisle runner and brass passage trim. The aircraft uses a chunky cargo body with rounded corners and a tapered nose, thick curled-tip wings, two high-mounted rear turbofans and one broad tail fin. The raised cockpit has wraparound glazing, fitted side consoles, a deep dashboard and a continuous carpeted floor. Click the BELLY GUN hatch to the right of the stairs with empty hands to enter the glass pod beneath the cockpit; Ctrl returns beside the stairs. The hatch swings open during the entry animation and closes afterward. Mouse aims, click fires, and holding right mouse lets you look around independently of the guns. The old upstairs well, courier bench and map are removed. Sources: `art/aircraft/rounded.py`, `art/aircraft/cockpit_finish.py`, `art/aircraft/rear_engines.py` and `art/aircraft/ball_turret.py`; rebuild through `art/aircraft/build.py`.
+The cabin has fitted spruce carpet with a cranberry aisle runner and brass passage trim. The aircraft uses a chunky cargo body with rounded corners and a tapered nose, thick curled-tip wings, two high-mounted rear turbofans and one broad tail fin. The raised cockpit has wraparound glazing, fitted side consoles, a deep dashboard and a continuous carpeted floor. Click the BELLY GUN hatch to the right of the stairs with empty hands to enter the glass pod beneath the cockpit; Ctrl returns beside the stairs. The hatch swings open during the entry animation and closes afterward. Mouse aims, click fires, and holding right mouse lets you look around independently of the guns. Sources: `art/aircraft/rounded.py`, `art/aircraft/cockpit_finish.py`, `art/aircraft/rear_engines.py` and `art/aircraft/ball_turret.py`; rebuild through `art/aircraft/build.py`.
 
 The cargo console operates both launchers: **1** selects left, **2** selects right, **Space** releases, and **Q** exits. Its view follows the selected ballistic impact, showing a large green impact circle with a central crosshair. The rear aisle is continuous; load either rack from the inboard trays. The belly turret uses a smooth transparent glass sphere. Parked, taxi and landing height share the same clearance datum.
 

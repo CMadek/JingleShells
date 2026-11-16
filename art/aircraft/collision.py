@@ -7,7 +7,9 @@ shell=loft("Temporary cabin collision shell",[airframe_ring(st,.055,48) for st i
 bpy.context.view_layer.objects.active=shell
 modifier=shell.modifiers.new("Collision skin thickness","SOLIDIFY");modifier.thickness=.045
 bpy.ops.object.modifier_apply(modifier=modifier.name)
-for center,size in [((-4.25,4.8,.94),(2.5,1.6,2.68)),((4.25,-11,.94),(2.5,1.6,2.68)),((1.75,7.3,-1),(1.6,1.5,2.4))]:
+openings=[((-4.25,4.8,.94),(2.5,1.6,2.68)),((1.75,7.3,-1),(1.6,1.5,2.4))]
+openings.extend(((x,y,-.8),(.96,.93,1.30)) for x,y in chute_centers)
+for center,size in openings:
     cutter=box("Temporary collision aperture",center,size,pine,0)
     bpy.context.view_layer.objects.active=shell
     modifier=shell.modifiers.new("Collision aperture","BOOLEAN")
@@ -37,7 +39,7 @@ def write_collision(name,objects,origin=Vector((0,0,0))):
     data=", ".join(format(value,".6f").rstrip("0").rstrip(".") if abs(value)>1e-7 else "0" for value in numbers)
     (OUT/(name+".tres")).write_text('[gd_resource type="ConcavePolygonShape3D" format=3]\n\n[resource]\ndata = PackedVector3Array('+data+')\nbackface_collision = true\n')
 
-fitted=[o for o in scene.objects if o.type=="MESH" and o.name.startswith(("Fitted carpet deck","Raised pilot carpet deck","Curved hold partition","Passage lintel","Windowless curved aft bulkhead","Curved door jamb","Fitted side console cabinet","Forward dashboard body","Pilot platform left fascia","Pilot platform right fascia"))]
+fitted=[o for o in scene.objects if o.type=="MESH" and o.name.startswith(("Fitted carpet deck","Raised pilot carpet deck","Curved hold partition","Passage lintel","Windowless curved aft bulkhead","Curved door jamb","Fitted side console cabinet","Forward dashboard body","Pilot platform left fascia","Pilot platform right fascia","Fitted wool headliner","Enclosed gunner passage wall","Gunner passage back","Terminal cabinet","Terminal CRT housing","Keyboard tray","Dispatch board backing"))]
 write_collision("cabin_collision",[shell]+fitted)
 write_collision("boarding_door_collision",[boarding_leaf],door_rig.location)
 bpy.data.objects.remove(shell,do_unlink=True)

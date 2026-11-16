@@ -1,6 +1,18 @@
 extends Node
 
+func check_frame_settings_migration() -> void:
+	var config := ConfigFile.new()
+	assert(Game.settings_from_config(config) == Game.DEFAULTS)
+	for cap: int in [1, 29, 30, 144, 360, 500]:
+		config.set_value("settings", "fps", cap)
+		var settings := Game.settings_from_config(config)
+		assert(settings.fps == clampi(cap, 30, 360) and not settings.unlocked_fps)
+	config.set_value("settings", "fps", 0)
+	var unlimited := Game.settings_from_config(config)
+	assert(unlimited.unlocked_fps and unlimited.fps == Game.DEFAULTS.fps)
+
 func _ready() -> void:
+	check_frame_settings_migration()
 	await get_tree().process_frame
 	var main = load("res://main.gd").new()
 	add_child(main)
@@ -49,17 +61,66 @@ func _ready() -> void:
 	assert(config.load("user://settings.cfg") == OK)
 	assert(config.get_value("settings", "volume") == 65.0)
 	main.ui.show_page("options")
+	main.ui.select_tab(1)
+	var graphics: Control = main.ui.tab_sections[1]
+	var unlock: CheckBox = graphics.get_node("unlocked_fps")
+	var fps: SpinBox = main.ui.number_fields.fps
+	var fps_slider: HSlider = fps.get_parent().get_child(0)
+	unlock.button_pressed = false
+	fps.get_line_edit().text = "1"
+	fps.apply()
+	assert(fps.value == 30 and fps_slider.value == 30 and main.ui.draft.fps == 30)
+	fps.get_line_edit().grab_focus()
+	fps.get_line_edit().text = "144"
+	unlock.button_pressed = true
+	assert(not fps_slider.editable and not fps.editable and main.ui.draft.fps == 144)
+	assert(Game.values.unlocked_fps == saved.unlocked_fps, "Unlock is staged until Apply")
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("res://.test-data/graphics-fps.png")
+	var manual_size := DisplayServer.window_get_size() - Vector2i(64, 36)
+	if saved.mode == 0:
+		DisplayServer.window_set_size(manual_size)
+		await get_tree().process_frame
+	main.ui.apply_options()
+	assert(Engine.max_fps == 0 and not is_instance_valid(main.ui.display_dialog))
+	if saved.mode == 0:
+		assert(DisplayServer.window_get_size() == manual_size, "FPS changes preserve a manually resized window")
+	assert(config.load("user://settings.cfg") == OK)
+	var restored := Game.settings_from_config(config)
+	assert(restored.fps == 144 and restored.unlocked_fps)
+	main.ui.show_page("options")
+	main.ui.select_tab(1)
+	graphics = main.ui.tab_sections[1]
+	unlock = graphics.get_node("unlocked_fps")
+	assert(unlock.button_pressed)
+	unlock.button_pressed = false
+	assert(main.ui.number_fields.fps.editable and main.ui.number_fields.fps.value == 144)
+	main.ui.apply_options()
+	assert(Engine.max_fps == 144 and not Game.values.unlocked_fps)
+	main.ui.show_page("options")
 	main.ui.number_fields.fov.get_line_edit().text = "999"
 	main.ui.number_fields.fov.apply()
 	assert(main.ui.number_fields.fov.value == 110)
 	main.ui.show_page("main")
 	assert(Game.values.fov == saved.fov, "Cancel discards slider and text edits")
 	main.ui.show_page("options")
+	main.ui.select_tab(1)
+	graphics = main.ui.tab_sections[1]
+	var modes: OptionButton = graphics.find_child("mode", true, false)
+	var resolutions: OptionButton = graphics.find_child("resolution", true, false)
+	for mode: int in [1, 2, 0]:
+		modes.select(mode)
+		modes.item_selected.emit(mode)
+		assert(resolutions.disabled == (mode != 0))
+		if mode != 0:
+			assert(resolutions.text == "Desktop resolution")
+		else:
+			assert(resolutions.selected == saved.resolution)
 	main.ui.draft.mode = 2 if Game.values.mode != 2 else 0
 	main.ui.apply_options()
 	assert(is_instance_valid(main.ui.display_dialog))
 	main.ui._revert_display()
-	assert(Game.values.mode == saved.mode)
+	assert(Game.values.mode == saved.mode and main.ui.active_tab == 1)
 	Game.values = saved
 	Game.apply_settings()
 	Game.save_settings()

@@ -21,8 +21,6 @@ const HELM_POS := Vector3(0, 1.55, -7.0)   # stand here to take the helm
 const HATCH_POS := Vector3(0, 0, 3.0)   # legacy manual-delivery reference; Mk II deck is sealed
 const GRAVITY := 9.8
 const START_ALTITUDE := Airfield.PARK.y
-const MIN_SPEED := 8.0
-const TURN_RATE := 0.45
 @export var nice_points := 10
 @export var naughty_penalty := 5
 @export var chimney_bonus := 5
@@ -32,18 +30,31 @@ const MAX_ALTITUDE := 1800.0
 # Flight model
 const STALL_SPEED := 9.0            # below this, no lift
 const CRUISE_SPEED := 14.0          # full lift at or above this
-const MAX_SPEED := 45.0             # hard cap (dive)
-const MIN_THROTTLE := 0.0           # idle; level cruise is ~14 m/s
+const MAX_SPEED := 90.0             # engraved airspeed dial, m/s
+const MIN_THROTTLE := 0.0
 const THROTTLE_RATE := 0.5          # throttle lever change per second
 const MAX_THRUST := 12.0            # accel at full throttle
 const DRAG := 0.012                 # accel lost = DRAG * speed^2
+const TRANSIT_THRUST := 22.0        # additional airborne thrust above half throttle
+const AFTERBURNER_SPEED := 82.0     # level-flight speed with the burner lit
+const AFTERBURNER_ACCEL := 17.0     # maximum additional-power acceleration, m/s²
+const BURN_TIME := 8.0             # seconds from cold to cutoff
+const COOL_TIME := 8.0             # seconds from full heat to cold
+const HEAT_WARNING := .75
+const HEAT_REARM := .35
+const ACRO_ROLL_RATE := deg_to_rad(125.0)
+const ACRO_PITCH_RATE := deg_to_rad(48.0)
 const PITCH_GRAVITY := 6.0          # speed lost per sin(pitch)
-const MAX_PITCH := deg_to_rad(35.0)
-const PITCH_RATE := deg_to_rad(35.0)
-const LEVEL_RATE := deg_to_rad(0.2)  # nose drifts back to level with no input
-const MAX_ROLL := deg_to_rad(45.0)
-const ROLL_RATE := deg_to_rad(15.0)
-const TURN_FACTOR := 0.6            # scales the coordinated-turn rate
+const MAX_PITCH := deg_to_rad(24.0)
+const PITCH_RATE := deg_to_rad(22.0)
+const LEVEL_RATE := deg_to_rad(18.0)
+const MAX_ROLL := deg_to_rad(28.0)
+const ROLL_RATE := deg_to_rad(24.0)
+const TURN_FACTOR := 1.1
+const HOLD_BANK_LIMIT := deg_to_rad(12.0)
+const HOLD_PITCH_LIMIT := deg_to_rad(10.0)
+const HOLD_RESPONSE := 0.65         # fraction of course/altitude error corrected per second
+const CRUISE_OFF := Vector2(0, -1)  # active targets store yaw (radians) and world altitude (metres)
 const STALL_NOSE_DROP := deg_to_rad(40.0)
 const STALL_SINK := 12.0
 const UNATTENDED_GRACE := 3.0
@@ -64,7 +75,6 @@ var score := 0
 var chimneys: Array = []   # {top: Vector3, nice: bool}
 var queues: Node3D
 var stations: Node3D
-var emergency: Node3D
 var supply_points: Array = []
 const CABIN_BOUNDS := AABB(Vector3(-4.85,-.5,-12.2),Vector3(9.7,7,24.3))
 @export_range(1, 6) var pickup_range := 2.8
@@ -91,7 +101,14 @@ var speed := 0.0
 var throttle := MIN_THROTTLE
 var in_steer := 0.0
 var in_throttle := 0.0
+var aerobatics := false
+var afterburner_held := false
+var burner_heat := 0.0
+var burner_locked := false
 var in_climb := 0.0
+var last_sent_controls := Vector4.ZERO
+var cruise_target := CRUISE_OFF
+var snapshot_crew_aboard := false
 var hud_score: Label
 var view_button: Button
 var hud_info: Label
@@ -350,10 +367,6 @@ func _build_bomber() -> void:
 	access.name = "AircraftAccess"
 	add_child(access)
 	access.build(self)
-	emergency = preload("res://emergency_exit.gd").new()
-	emergency.name = "EmergencyExit"
-	add_child(emergency)
-	emergency.build(self)
 	flight_audio = preload("res://flight_audio.gd").new()
 	flight_audio.name = "FlightAudio"
 	bomber.add_child(flight_audio)
@@ -429,8 +442,7 @@ func request_players() -> void:
 	queues.snapshot(id)
 	stations.snapshot(id)
 	mess.snapshot(id)
-	emergency.set_gone.rpc_id(id,emergency.gone,false)
-	sync_bomber.rpc_id(id,bomber.position,heading,pitch,roll,speed,throttle,0.0,Vector3(in_steer,in_throttle,in_climb))
+	send_flight_snapshot(0.0, id)
 	for pid in players:
 		crew_posture.rpc_id(id, pid, players[pid].crouched, players[pid].is_on_floor() if pid == 1 else players[pid].net_grounded)
 		if players[pid].held_kind != Cargo.Kind.EMPTY:
@@ -498,6 +510,7 @@ func _handle_helm(id: int) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func set_pilot(id: int) -> void:
+	if pilot_id != 0 and id == 0: aerobatics = false
 	if id in players:
 		players[id].charging_since = -1
 		players[id].presentation.trigger("cancel")
@@ -508,6 +521,8 @@ func set_pilot(id: int) -> void:
 	if elf:
 		elf.set_local_pilot(id == me)
 	view_button.visible = id == me
+	last_sent_controls = Vector4.ZERO
+	afterburner_held = false
 	in_steer = 0.0
 	in_throttle = 0.0
 	in_climb = 0.0
@@ -520,26 +535,83 @@ func toggle_pilot_view() -> void:
 	if pilot_id == me and players.has(me):
 		players[me].toggle_view()
 
-
-func send_pilot_input(steer: float, throttle: float, climb: float) -> void:
+func request_aerobatics() -> void:
 	if multiplayer.is_server():
-		_apply_input(1, steer, throttle, climb)
+		_toggle_aerobatics(1)
 	else:
-		_input_rpc.rpc_id(1, steer, throttle, climb)
+		_aerobatics_rpc.rpc_id(1)
 
+@rpc("any_peer", "reliable")
+func _aerobatics_rpc() -> void:
+	if multiplayer.is_server(): _toggle_aerobatics(multiplayer.get_remote_sender_id())
 
-@rpc("any_peer", "unreliable_ordered")
-func _input_rpc(steer: float, throttle: float, climb: float) -> void:
+func _toggle_aerobatics(id: int) -> void:
+	if id != pilot_id or id == 0: return
+	aerobatics = not aerobatics
+	cruise_target = CRUISE_OFF
+
+func request_cruise_hold() -> void:
 	if multiplayer.is_server():
-		_apply_input(multiplayer.get_remote_sender_id(), steer, throttle, climb)
+		_toggle_cruise_hold(1)
+	else:
+		_cruise_rpc.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func _cruise_rpc() -> void:
+	if multiplayer.is_server():
+		_toggle_cruise_hold(multiplayer.get_remote_sender_id())
+
+func _toggle_cruise_hold(id: int) -> void:
+	if id != pilot_id or id == 0: return
+	if cruise_target != CRUISE_OFF:
+		cruise_target = CRUISE_OFF
+	elif grounded or speed < CRUISE_SPEED:
+		access.notice.rpc_id(id, "Cruise hold needs airborne flight at %d m/s or faster" % CRUISE_SPEED)
+	elif in_steer != 0.0 or in_climb != 0.0 or in_throttle != 0.0 or afterburner_held:
+		access.notice.rpc_id(id, "Release the flight controls to set cruise hold")
+	else:
+		cruise_target = Vector2(heading, bomber.position.y)
+		aerobatics = false
 
 
-func _apply_input(id: int, steer: float, throttle: float, climb: float) -> void:
-	if id != pilot_id:
+func afterburner_active() -> bool:
+	return afterburner_held and not grounded and not burner_locked
+
+func burner_status() -> String:
+	if burner_locked:
+		return "RELEASE" if burner_heat <= HEAT_REARM else "COOLING"
+	if afterburner_active():
+		return "EASE OFF" if burner_heat >= HEAT_WARNING else "BOOST"
+	return "READY"
+
+func send_pilot_input(steer: float, throttle: float, climb: float, burn := false) -> void:
+	var controls := Vector4(steer, throttle, climb, float(burn))
+	if multiplayer.is_server():
+		_apply_input(1, controls)
+	elif controls != last_sent_controls:
+		last_sent_controls = controls
+		_input_rpc.rpc_id(1, controls)
+
+
+# Key transitions and hold/helm requests share reliable ordering. A late movement
+# packet must not cancel a newer hold or leave a released throttle lever moving.
+@rpc("any_peer", "reliable")
+func _input_rpc(controls: Vector4) -> void:
+	if multiplayer.is_server():
+		_apply_input(multiplayer.get_remote_sender_id(), controls)
+
+
+func _apply_input(id: int, controls: Vector4) -> void:
+	if id != pilot_id or not controls.is_finite():
 		return
-	in_steer = clampf(steer, -1.0, 1.0)
-	in_throttle = clampf(throttle, -1.0, 1.0)
-	in_climb = clampf(climb, -1.0, 1.0)
+	in_steer = clampf(controls.x, -1.0, 1.0)
+	in_throttle = clampf(controls.y, -1.0, 1.0)
+	in_climb = clampf(controls.z, -1.0, 1.0)
+	afterburner_held = controls.w > .5
+	if not afterburner_held and burner_heat <= HEAT_REARM:
+		burner_locked = false
+	if in_steer != 0.0 or in_climb != 0.0 or in_throttle != 0.0 or afterburner_held:
+		cruise_target = CRUISE_OFF
 
 
 # ---------------------------------------------------------------- flight
@@ -553,7 +625,7 @@ func _physics_process(delta: float) -> void:
 		moving_hull.transform = bomber.transform
 		var vertical_speed := (bomber.position.y - previous_plane.origin.y) / delta
 		instruments.update_readings(self, vertical_speed)
-		sync_bomber.rpc(bomber.position, heading, pitch, roll, speed, throttle, vertical_speed, Vector3(in_steer,in_throttle,in_climb))
+		send_flight_snapshot(vertical_speed)
 		_step_cargo(delta)
 	access.step(delta)
 
@@ -561,7 +633,9 @@ func flight_state() -> Dictionary:
 	return {"position":bomber.position,"heading":heading,"pitch":pitch,"roll":roll,
 		"speed":speed,"throttle":throttle,"grounded":grounded,"phase":phase,
 		"in_steer":in_steer,"in_throttle":in_throttle,"in_climb":in_climb,
-		"crew_aboard":has_crew_aboard(),"unattended_seconds":unattended_seconds}
+		"crew_aboard":has_crew_aboard() if multiplayer.is_server() else snapshot_crew_aboard,
+		"unattended_seconds":unattended_seconds,"cruise_target":cruise_target,"aerobatics":aerobatics,
+		"afterburner_held":afterburner_held,"burner_heat":burner_heat,"burner_locked":burner_locked}
 
 func has_crew_aboard() -> bool:
 	for id in players:
@@ -598,10 +672,29 @@ func _fly(delta: float) -> void:
 	grounded = state.grounded
 	phase = state.phase
 	unattended_seconds = state.unattended_seconds
+	cruise_target = state.cruise_target
+	afterburner_held = state.afterburner_held
+	burner_heat = state.burner_heat
+	burner_locked = state.burner_locked
 	if unattended_seconds >= UNATTENDED_GRACE and not state.crew_aboard and pilot_id != 0:
 		set_pilot.rpc(0)
 	_apply_attitude()
 	recover_outside_world()
+
+func _advance_burner(state: Dictionary, delta: float) -> bool:
+	# The last powered tick reaches cutoff. Cooling continues even with the key held.
+	var burning: bool = state.afterburner_held and not state.grounded and not state.burner_locked
+	if burning:
+		state.burner_heat = minf(1.0, state.burner_heat + delta / BURN_TIME)
+		if is_equal_approx(state.burner_heat, 1.0):
+			state.burner_heat = 1.0
+			state.burner_locked = true
+	else:
+		state.burner_heat = maxf(0.0, state.burner_heat - delta / COOL_TIME)
+		if is_equal_approx(state.burner_heat, HEAT_REARM): state.burner_heat = HEAT_REARM
+		if state.burner_heat <= HEAT_REARM and not state.afterburner_held:
+			state.burner_locked = false
+	return burning
 
 func advance_flight(state: Dictionary, delta: float) -> void:
 	# Pure simulation step shared by the host and delayed-release forecast.
@@ -610,7 +703,10 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 	var moving: bool = not state.grounded or state.speed > .1 or state.throttle > .01
 	state.unattended_seconds = 0.0 if state.crew_aboard or not moving else state.unattended_seconds + delta
 	var returning: bool = state.unattended_seconds >= UNATTENDED_GRACE
+	if returning or state.grounded or state.speed < CRUISE_SPEED:
+		state.cruise_target = CRUISE_OFF
 	if returning:
+		state.afterburner_held = false
 		state.in_steer = 0.0
 		state.in_throttle = 0.0
 		state.in_climb = 0.0
@@ -618,6 +714,7 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 	else:
 		state.throttle = clampf(state.throttle + state.in_throttle * THROTTLE_RATE * delta, MIN_THROTTLE, 1.0)
 
+	var burning := _advance_burner(state, delta)
 	if state.grounded:
 		state.pitch = 0
 		state.roll = 0
@@ -635,48 +732,86 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 
 	# 0 = stalled, 1 = full lift. Control authority also scales with airspeed.
 	var lift := clampf((state.speed - STALL_SPEED) / (CRUISE_SPEED - STALL_SPEED), 0.0, 1.0)
-	var authority := clampf(state.speed / CRUISE_SPEED, 0.3, 1.3)
+	var authority := clampf(state.speed / CRUISE_SPEED, 0.3, 1.1)
 
-	# Roll: stick commands a bank angle, which self-levels when released.
-	state.roll = move_toward(state.roll, state.in_steer * MAX_ROLL, ROLL_RATE * authority * delta)
-
-	# Pitch: stick commands a rate. With no input the nose eases back to level
-	# (this is also the "autopilot" when nobody is at the helm).
-	if returning:
-		state.pitch = move_toward(state.pitch, RETURN_GLIDE_PITCH, RETURN_LEVEL_RATE * delta)
-	elif absf(state.in_climb) > 0.01:
-		state.pitch += state.in_climb * PITCH_RATE * authority * maxf(lift, 0.3) * delta
+	if state.aerobatics and not returning and state.cruise_target == CRUISE_OFF:
+		_steer_aerobatic(state,delta,lift)
 	else:
-		state.pitch = move_toward(state.pitch, 0.0, LEVEL_RATE * delta)
-	state.pitch -= (1.0 - lift) * STALL_NOSE_DROP * delta   # stalled: nose drops
-	state.pitch = clampf(state.pitch, -MAX_PITCH, MAX_PITCH)
+		_steer_assisted(state, delta, lift, authority, returning)
 
-	# Coordinated turn: yaw rate = g * tan(bank) / state.speed. Faster = wider turns.
-	# Positive state.roll is a right turn, which means state.heading decreases.
-	state.heading -= GRAVITY * tan(state.roll) / maxf(state.speed, 1.0) * TURN_FACTOR * delta
-
-	# Energy: thrust vs drag, and climbing trades state.speed for height.
-	var accel: float = MAX_THRUST * state.throttle - DRAG * state.speed * state.speed - PITCH_GRAVITY * sin(state.pitch)
+	# Preserve fine throttle control around the houses and add power for the transit leg.
+	var thrust: float = MAX_THRUST * state.throttle + TRANSIT_THRUST * smoothstep(.5, 1.0, state.throttle)
+	var max_accel := 10.0
+	if burning:
+		thrust = DRAG * AFTERBURNER_SPEED * AFTERBURNER_SPEED
+		max_accel = AFTERBURNER_ACCEL
+	var accel := clampf(thrust - DRAG * state.speed * state.speed, -9.0, max_accel) - PITCH_GRAVITY * sin(state.pitch)
 	state.speed = clampf(state.speed + accel * delta, 4.0, MAX_SPEED)
-
-	# Velocity follows the nose, minus sink from stalling and from banking.
-	var cp: float = cos(state.pitch)
-	var vel: Vector3 = Vector3(-sin(state.heading) * cp, sin(state.pitch), -cos(state.heading) * cp) * state.speed
-	vel.y -= (1.0 - lift) * STALL_SINK
-	vel.y -= (1.0 - cos(state.roll)) * 4.0   # lift lost to bank
-	state.position += vel * delta
-	if returning: state.phase = "UNATTENDED / GLIDING DOWN"
-
-	# Altitude limits: ground/ceiling push the nose back toward level.
+	var forward := -flight_pose(state).basis.z
+	var velocity: Vector3 = forward * state.speed
+	velocity.y -= (1.0 - lift) * STALL_SINK
+	if not state.aerobatics or returning: velocity.y -= (1.0 - cos(state.roll)) * 4.0
+	state.position += velocity * delta
+	state.phase = "UNATTENDED / GLIDING DOWN" if returning else "IN FLIGHT"
 	if state.position.y < MIN_ALTITUDE:
 		state.position.y = MIN_ALTITUDE
 		state.pitch = 0
 		state.roll = 0
 		state.grounded = true
+		state.cruise_target = CRUISE_OFF
 		state.phase = "LANDED"
 	elif state.position.y > MAX_ALTITUDE:
 		state.position.y = MAX_ALTITUDE
-		state.pitch = minf(state.pitch, 0.0)
+		if not state.aerobatics: state.pitch = minf(state.pitch, 0.0)
+
+func _steer_aerobatic(state: Dictionary, delta: float, lift: float) -> void:
+	var axes := flight_pose(state).basis
+	var pitch_rate := ACRO_PITCH_RATE * (1.32 if state.in_throttle < 0 else 1.0)
+	var rates := Vector3(state.in_climb * pitch_rate, 0, -state.in_steer * ACRO_ROLL_RATE) * lerpf(.36, 1.0, lift)
+	if not rates.is_zero_approx():
+		axes = axes * Basis(rates.normalized(), rates.length() * delta)
+	if lift < 1.0:
+		axes = axes.rotated(axes.x if axes.y.y >= 0 else -axes.x, -(1.0-lift)*STALL_NOSE_DROP*delta)
+	# Keep the last compass bearing at vertical. atan2 retains small stick
+	# movements near the poles when encoding the new attitude for replication.
+	var horizontal := Vector2(axes.z.x,axes.z.z).length()
+	state.pitch = atan2(-axes.z.y,horizontal)
+	if horizontal > .000001: state.heading = atan2(axes.z.x,axes.z.z)
+	var unbanked := Basis(Vector3.UP,state.heading) * Basis(Vector3.RIGHT,state.pitch)
+	var local_right := unbanked.inverse() * axes.x
+	state.roll = -atan2(local_right.y,local_right.x)
+
+func _steer_assisted(state: Dictionary, delta: float, lift: float, authority: float, returning: bool) -> void:
+	var bank_command: float = state.in_steer * MAX_ROLL
+	var pitch_command: float = state.in_climb * MAX_PITCH
+	var pitch_rate := PITCH_RATE * authority * maxf(lift, 0.3)
+	if state.cruise_target != CRUISE_OFF:
+		# Convert heading error to a bank demand using the coordinated-turn equation.
+		var yaw_rate := angle_difference(state.heading, state.cruise_target.x) * HOLD_RESPONSE
+		bank_command = clampf(atan(-yaw_rate * state.speed / (GRAVITY * TURN_FACTOR)), -HOLD_BANK_LIMIT, HOLD_BANK_LIMIT)
+	# Roll out smoothly when assist is engaged midway through an aerobatic maneuver.
+	var roll_step := ROLL_RATE * authority * delta
+	if absf(state.roll) > MAX_ROLL: roll_step = ACRO_ROLL_RATE * delta
+	state.roll = wrapf(rotate_toward(state.roll, bank_command, roll_step), -PI, PI)
+	var bank_sink := (1.0 - cos(state.roll)) * 4.0
+	if returning:
+		pitch_command = RETURN_GLIDE_PITCH
+		pitch_rate = RETURN_LEVEL_RATE
+	elif state.cruise_target != CRUISE_OFF:
+		var climb_rate: float = (state.cruise_target.y - state.position.y) * HOLD_RESPONSE + bank_sink
+		pitch_command = asin(clampf(climb_rate / state.speed, -sin(HOLD_PITCH_LIMIT), sin(HOLD_PITCH_LIMIT)))
+	elif is_zero_approx(state.in_climb):
+		pitch_rate = LEVEL_RATE
+	if absf(state.pitch) > MAX_PITCH: pitch_rate = ACRO_PITCH_RATE
+	var lower_limit := minf(state.pitch, -MAX_PITCH)
+	state.pitch = move_toward(state.pitch, pitch_command, pitch_rate * delta)
+	state.pitch -= (1.0 - lift) * STALL_NOSE_DROP * delta   # stalled: nose drops
+	state.pitch = maxf(state.pitch, lower_limit)
+
+	# Coordinated turn: yaw rate = g * tan(bank) / state.speed. Faster = wider turns.
+	# Positive state.roll is a right turn, which means state.heading decreases.
+	var turn_bank := clampf(state.roll, -MAX_ROLL, MAX_ROLL)
+	state.heading -= GRAVITY * tan(turn_bank) / maxf(state.speed, 1.0) * TURN_FACTOR * lift * delta
 
 	
 func _apply_attitude() -> void:
@@ -684,11 +819,27 @@ func _apply_attitude() -> void:
 	bomber.rotation = Vector3(pitch, heading, -roll)
 
 
+func send_flight_snapshot(vertical_speed: float, peer_id := 0) -> void:
+	sync_bomber.rpc_id(peer_id, bomber.position, heading, pitch, roll, speed, throttle, vertical_speed,
+		Vector4(in_steer, in_throttle, in_climb, float(afterburner_held)), cruise_target, grounded, has_crew_aboard(), unattended_seconds, aerobatics,
+		burner_heat, burner_locked)
+
 @rpc("authority", "unreliable_ordered")
-func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: float, vertical_speed: float, controls: Vector3 = Vector3.ZERO) -> void:
+func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: float, vertical_speed: float,
+		controls: Vector4, hold_target: Vector2, on_ground: bool, crew_aboard: bool, empty_seconds: float, free_flight: bool,
+		heat: float, locked: bool) -> void:
+	aerobatics = free_flight
+	cruise_target = hold_target
+	snapshot_crew_aboard = crew_aboard
+	unattended_seconds = empty_seconds
 	in_steer = controls.x
 	in_throttle = controls.y
 	in_climb = controls.z
+	afterburner_held = controls.w > .5
+	burner_heat = heat
+	burner_locked = locked
+	grounded = on_ground
+	if last_flight_packet == 0: flight_audio.was_burning = afterburner_active()
 	var old := bomber.transform
 	previous_plane = old
 	var now := Time.get_ticks_msec()
@@ -696,8 +847,8 @@ func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: fl
 		physics_delta = maxf((now - last_flight_packet) / 1000.0, .001)
 	last_flight_packet = now
 	bomber.position = pos
-	grounded = pos.y <= MIN_ALTITUDE + .001 and absf(p) < .01
 	phase = ("PREPARATION" if s < .1 else "TAXI / TAKEOFF") if grounded else "IN FLIGHT"
+	if not grounded and unattended_seconds >= UNATTENDED_GRACE: phase = "UNATTENDED / GLIDING DOWN"
 	heading = h
 	pitch = p
 	roll = r
@@ -1004,14 +1155,34 @@ func sync_score(s: int, msg: String) -> void:
 
 # ---------------------------------------------------------------- HUD
 
+func flight_status() -> String:
+	if grounded: return ""
+	if unattended_seconds >= UNATTENDED_GRACE: return "UNATTENDED GLIDE"
+	if speed <= STALL_SPEED: return "STALL  •  Add throttle and ease the nose down"
+	if speed < CRUISE_SPEED: return "LOW AIRSPEED  •  Add throttle"
+	if cruise_target != CRUISE_OFF:
+		var course := posmod(roundi(-rad_to_deg(cruise_target.x)), 360)
+		return "CRUISE HOLD  •  %03d°  /  %d m" % [course, roundi(cruise_target.y)]
+	return ""
+
 func _process(delta: float) -> void:
 	hud_score.text = "Score: %d" % score
 	var me := multiplayer.get_unique_id()
-	var txt := "%s | Speed %d m/s | Throttle %d%% | Altitude %d\n" % [phase,speed,throttle*100,bomber.position.y]
+	var status := flight_status()
+	var txt := "%s | Speed %d m/s | Throttle %d%% | Altitude %d m\n" % [phase,speed,throttle*100,bomber.position.y]
+	if status != "": txt += status + "\n"
 	if pilot_id == me:
 		var outside: bool = players.has(me) and players[me].chase.current
 		view_button.text = ("Cockpit view [{pilot_view}]" if outside else "Chase view [{pilot_view}]").format(Game.bindings.labels)
-		txt += "PILOTING: {move_forward}/{move_back} speed, {move_left}/{move_right} turn, {jump}/{descend} climb/dive, {interact} to leave the helm"
+		txt += "AEROBATICS   •   {move_left}/{move_right} roll   {jump}/{descend} pitch   {aerobatics} flight assist" if aerobatics else "FLIGHT ASSIST   •   {move_left}/{move_right} turn   {jump}/{descend} climb/dive   {aerobatics} aerobatics"
+		txt += "\n{move_forward}/{move_back} throttle   Hold {afterburner} for boost   {interact} leave helm"
+		if outside:
+			var heat_label := burner_status()
+			if heat_label == "RELEASE": heat_label += " {afterburner}"
+			var percent := ceili(burner_heat * 100) if burner_locked else floori(burner_heat * 100)
+			txt += "   •   HEAT %d%%   %s" % [percent, heat_label]
+		if not grounded:
+			txt += "\n{cruise_hold} release cruise hold" if cruise_target != CRUISE_OFF else "\n{cruise_hold} hold heading & altitude"
 		if outside:
 			txt += "   Hold {pilot_orbit} and drag to orbit"
 	else:
@@ -1035,16 +1206,19 @@ func _process(delta: float) -> void:
 		var station_target: String = stations.aimed(me) if queue_prompt == "" else ""
 		if station_target == "turret": txt += "\n{crew_primary} — Enter gun hatch • {turret_leave} — Leave turret"
 		elif station_target == "delivery": txt += "\n{interact} — Operate delivery console • {launcher_leave} — Leave"
-		if emergency.aimed(local_elf.head.global_transform): txt += "\n{interact} — Emergency exit (tears door off)"
 		var target: String = access.aimed(local_elf.head.global_transform)
 		if target != "": txt += "\n{interact} — " + ("Close " if access.opened[target] else "Open ") + target
 	if grounded:
 		txt += "\n{move_forward} throttle • {jump} at 18 m/s to take off • Hold {move_back} to brake"
-	hud_info.visible = stations.active_local == "" and not mess.dialogue.choosing()
+	hud_info.visible = not mess.dialogue.choosing()
 	hud_info.text = txt.format(Game.bindings.labels)
-	if local_elf:
+	if stations.active_local != "":
+		hud_info.text = status
+	elif local_elf:
 		var room_hint: String = mess.hint(me)
-		if room_hint != "": hud_info.text = room_hint.format(Game.bindings.labels)
+		if room_hint != "":
+			hud_info.text = room_hint.format(Game.bindings.labels)
+			if status != "" and aboard(local_elf.global_position): hud_info.text += "\n" + status
 	if msg_timer > 0.0:
 		msg_timer -= delta
 		if msg_timer <= 0.0:
@@ -1057,16 +1231,23 @@ func aboard(point: Vector3) -> bool:
 func at_airfield(point: Vector3) -> bool:
 	return absf(point.x) < 65 and point.z > -300 and point.z < 920
 
+func crew_frame(pose: Transform3D) -> Basis:
+	if aerobatics and not grounded: return pose.basis
+	var level := Basis(Vector3.UP, atan2(pose.basis.z.x, pose.basis.z.z))
+	# When switching assist on upside down, retain deck gravity through the rollout.
+	var tilt := acos(clampf(pose.basis.y.y, -1.0, 1.0))
+	return level.slerp(pose.basis, smoothstep(deg_to_rad(48), deg_to_rad(72), tilt))
+
 func carry_crew(old: Transform3D) -> void:
 	var yaw_delta := angle_difference(atan2(old.basis.z.x, old.basis.z.z), atan2(bomber.global_basis.z.x, bomber.global_basis.z.z))
+	var frame_change := crew_frame(bomber.transform) * crew_frame(old).inverse()
 	for elf in players.values():
 		var local: Vector3 = old.affine_inverse()*elf.global_position
 		if CABIN_BOUNDS.has_point(local):
 			elf.global_position = bomber.global_transform * local
-			# Rotate a walking crew member's heading only; never bank their capsule
-			# or accumulate pitch/roll in the visual hierarchy. The gimbal owns seats.
 			if stations.station_for(elf.peer_id) != "turret":
-				elf.keep_upright(yaw_delta)
+				elf.global_basis = frame_change * elf.global_basis
+				elf.velocity = frame_change * elf.velocity
 			if not elf.is_multiplayer_authority():
 				elf.net_pos = bomber.global_transform*(old.affine_inverse()*elf.net_pos)
 				elf.net_yaw = wrapf(elf.net_yaw + yaw_delta, -PI, PI)
@@ -1092,12 +1273,16 @@ func begin_level() -> void:
 	speed = 0
 	throttle = 0
 	unattended_seconds = 0
+	cruise_target = CRUISE_OFF
 	grounded = true
 	phase = "PREPARATION"
+	aerobatics = false
+	burner_heat = 0.0
+	burner_locked = false
 	_apply_attitude()
 	previous_plane = bomber.transform
 	moving_hull.transform = bomber.transform
-	sync_bomber.rpc(bomber.position,heading,pitch,roll,speed,throttle,0.0,Vector3(in_steer,in_throttle,in_climb))
+	send_flight_snapshot(0.0)
 	access.set_state.rpc("door",true,1.0)
 	access.set_state.rpc("hatch",false,0.0)
 	reset_crew.rpc()
@@ -1105,7 +1290,6 @@ func begin_level() -> void:
 @rpc("authority", "call_local", "reliable")
 func reset_crew() -> void:
 	mess.dialogue.close()
-	emergency.set_gone(false,false)
 	flight_audio.reset_state()
 	for id in players:
 		var elf = players[id]

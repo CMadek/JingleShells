@@ -1,4 +1,4 @@
-"""Blender-authored candy cane and cocoa mug for the off-duty menu crew."""
+"""Head-mounted break props and the off-duty crew's animated cocoa mug."""
 
 def bind_prop(obj, bone):
     group = obj.vertex_groups.new(name=bone)
@@ -52,6 +52,19 @@ points = [Vector((.060, -.238-.19*i/32, 1.412-.012*i/32)) for i in range(33)]
 points += [Vector((.060, -.428-.044*math.sin(a), 1.356+.044*math.cos(a))) for a in [i*math.pi/40 for i in range(1,41)]]
 points.append(Vector((.060,-.409,1.312)))
 prop_tube('Hooked peppermint cane', points, .013, [candy_red,candy_cream], 'Head', Vector((1,0,0)), True)
+
+# Separate material batches let the depot and title use the same seated rig.
+lip = Vector((.060,-.238,1.412))
+end = lip + Vector((.076,-.145,-.018))
+axis = (end-lip).normalized()
+smoke_origin = end + axis*.015
+for name,a,b,r,color,glow in [
+    ('filter',lip,lip+axis*.032,.010,(.50,.29,.14),False),
+    ('paper',lip+axis*.032,end,.0095,(.83,.79,.67),False),
+    ('ember',end,end+axis*.009,.010,(1.0,.17,.025),True),
+    ('ash',end+axis*.009,smoke_origin,.0085,(.30,.27,.22),False),
+]:
+    prop_tube('Cigarette '+name,[a,b],r,[material('Cigarette '+name,color,glow)],'Head',Vector((1,0,0)))
 
 # The cup is authored around its own rig control, independent of the forearm.
 # This lets the mitten remain on the handle as the mug tilts toward the lips.
