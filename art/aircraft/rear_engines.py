@@ -25,6 +25,7 @@ for side in (-1,1):
             sections.append([c+tangent*dx*width+Vector((0,dy*.055,0)) for dx,dy in [(-1,-1),(1,-1),(1,1),(-1,1)]])
         bind(loft("Swept intake fan blade",sections,pine,True,.015),fan)
     exhaust=loft("Recessed exhaust nozzle",[ring(d,r) for d,r in [(-2.85,.73),(-3.08,.67),(-3.1,.51),(-2.55,.48)]],iron,False)
+    rig("Afterburner"+("L" if side<0 else "R"),(x,y-3.08,z))
     for face in exhaust.data.polygons:face.use_smooth=True
     cone=loft("Rounded exhaust centerbody",[ring(d,r) for d,r in [(-2.65,.46),(-3.05,.41),(-3.48,.27),(-3.65,.08),(-3.68,.015)]],pine)
     for face in cone.data.polygons:face.use_smooth=True

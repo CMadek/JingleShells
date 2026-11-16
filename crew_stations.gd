@@ -1,7 +1,7 @@
 extends Node3D
 ## Independent console and turret occupancy, cameras and input contexts.
-const SEATS := {"delivery":Vector3(-1.65,.05,-.05),"turret":Vector3(1.9,.05,-4.25)}
-const CONTROLS := {"delivery":Vector3(-2.55,1.15,-.05),"turret":Vector3(1.9,.78,-5.48)}
+const SEATS := {"delivery":Vector3(-1.94,.05,-1.72),"turret":Vector3(1.9,.05,-4.25)}
+const CONTROLS := {"delivery":Vector3(-2.62,1.30,-1.72),"turret":Vector3(1.9,.78,-5.48)}
 var world: Node3D
 var occupants := {"delivery":0,"turret":0}
 var yaw := 0.0
@@ -18,6 +18,7 @@ var muzzle: Node3D
 var console_camera: Camera3D
 var turret_camera: Camera3D
 var ui: CanvasLayer
+var terminal_text: Label3D
 var text: Label
 var reticle: Label
 var circles: Array[Node3D] = []
@@ -49,9 +50,16 @@ func build(w: Node3D) -> void:
 	turret_yaw.add_child(turret_camera)
 	turret_camera.position = GUNNER_VIEW
 	turret_camera.far = 3000
-	for key in ["delivery"]:
-		world._hull_box(world.bomber.get_node("Hull"),Vector3(.65,1,1),Vector3(CONTROLS[key].x,.5,CONTROLS[key].z))
-		if world.moving_hull: world._hull_box(world.moving_hull,Vector3(.65,1,1),Vector3(CONTROLS[key].x,.5,CONTROLS[key].z))
+	var tube: Node3D = world.instruments.get_node("TerminalScreen_rig")
+	terminal_text = Label3D.new()
+	terminal_text.name = "PhosphorReadout"
+	terminal_text.rotation.y = PI/2
+	terminal_text.pixel_size = .0014
+	terminal_text.font_size = 39
+	terminal_text.outline_size = 0
+	terminal_text.modulate = Color("95ee98")
+	terminal_text.double_sided = false
+	tube.add_child(terminal_text)
 	ui = CanvasLayer.new()
 	add_child(ui)
 	text = Label.new()
@@ -105,6 +113,7 @@ func station_for(id: int) -> String:
 func aimed(id: int) -> String:
 	for key in CONTROLS:
 		if world.queues.sees(id,CONTROLS[key],.6): return key
+	if world.queues.sees(id,terminal_text.get_parent().position,.43): return "delivery"
 	return ""
 
 func request(key: String) -> void:
@@ -274,6 +283,13 @@ func snapshot(id: int) -> void:
 func _physics_process(delta: float) -> void:
 	if not world: return
 	refresh_camera()
+	var readout := "DISPATCH   /   D-48\n------------------"
+	for rack in 2:
+		var line := "PORT" if rack == 0 else "STBD"
+		var count: int = world.queues.queues[rack].size()
+		readout += "\n%s    %s" % [line, "CYCLING" if world.queues.remaining[rack] > 0 else "%d / 5" % count]
+	readout += "\n\n" + ("LINK ACTIVE" if occupants.delivery else "SYSTEM READY")
+	if terminal_text.text != readout: terminal_text.text = readout
 	hatch_time = maxf(0,hatch_time-delta)
 	hatch.rotation.y = move_toward(hatch.rotation.y,-1.4 if hatch_time > .25 else 0.0,delta*7.5)
 	climb_time = maxf(0,climb_time-delta)

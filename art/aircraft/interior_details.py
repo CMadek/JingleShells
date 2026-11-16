@@ -1,10 +1,5 @@
 """Courier cabin fittings kept outside the walking and loading routes."""
 group("08 North Star cabin character")
-# Printed instructions on the working console, rather than floating wall text.
-box("Delivery instructions plaque",(-2.80,.05,1.48),(.05,1.26,.50),pine,.025)
-label("Delivery plaque heading","CARGO CONTROL",(-2.765,.05,1.61),(pi/2,0,pi/2),.11,cream)
-label("Delivery plaque channels","1 LEFT   /   2 RIGHT",(-2.765,.05,1.47),(pi/2,0,pi/2),.085,gold)
-label("Delivery plaque action","E ENTER   /   SPACE DROP",(-2.765,.05,1.34),(pi/2,0,pi/2),.065,cream)
 # Warm miniature festoon lamps follow the side shoulders, above head height.
 for side in (-1,1):
     points=[]

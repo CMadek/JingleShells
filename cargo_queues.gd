@@ -19,37 +19,52 @@ var selected_id := 0
 var revision := 0
 var sound: AudioStreamPlayer3D
 
-static func slot(rack: int, index: int) -> Vector3:
-	return Vector3(-2.22 if rack == 0 else 2.22,1.02,1.4+index*.8)
-static func loader(rack: int) -> Vector3:
-	return Vector3(-1.6 if rack == 0 else 1.6,1.0,5.65)
-static func outlet(rack: int) -> Vector3:
-	return Vector3(-1.32 if rack == 0 else 1.32,-1.60,1.4)
+var slots: Array[PackedVector3Array] = []
+var loaders := PackedVector3Array()
+var outlets := PackedVector3Array()
+var closed_gates := PackedVector3Array()
+
+func slot(rack: int, index: int) -> Vector3:
+	return slots[rack][index]
+func loader(rack: int) -> Vector3:
+	return loaders[rack]
+func outlet(rack: int) -> Vector3:
+	return outlets[rack]
 
 func build(w: Node3D) -> void:
 	world = w
 	for rack in 2:
+		var positions := PackedVector3Array()
+		for i in CAPACITY:
+			positions.append(world.instruments.get_node("Rack%dSlot%d_rig" % [rack,i+1]).position)
+		slots.append(positions)
+		loaders.append(world.instruments.get_node("Rack%dLoadingPoint_rig" % rack).position)
+		outlets.append(world.instruments.get_node("ChuteOutlet%d_rig" % rack).position)
 		var x := slot(rack,0).x
-		world._hull_box(world.bomber.get_node("Hull"),Vector3(1.05,.85,4.5),Vector3(x,.425,3.1))
-		# Cargo hull already exists; match its guarded rack volume.
-		if world.moving_hull: world._hull_box(world.moving_hull,Vector3(1.05,.85,4.5),Vector3(x,.425,3.1))
+		for hull in [world.bomber.get_node("Hull"), world.moving_hull]:
+			if hull:
+				world._hull_box(hull,Vector3(1.16,.78,4.86),Vector3(x,.39,3.72))
+				world._hull_box(hull,Vector3(1.16,1.56,.94),Vector3(x,.78,outlet(rack).z))
+				world._hull_box(hull,Vector3(.96,.12,.93),Vector3(signf(x)*2.54,.88,1.53))
 		for i in 5:
 			var tag := Label3D.new()
 			tag.text = "1 • NEXT" if i == 0 else str(i+1)
 			tag.font_size = 32
 			tag.pixel_size = .003
-			tag.position = slot(rack,i)+Vector3(.57 if rack == 0 else -.57,-.17,0)
+			tag.position = slot(rack,i)+Vector3(.60 if rack == 0 else -.60,-.17,0)
 			tag.rotation.y = PI/2 if rack == 0 else -PI/2
 			world.bomber.add_child(tag)
 		var label := Label3D.new()
 		label.text = ("LEFT" if rack == 0 else "RIGHT") + " • LOAD"
-		label.position = loader(rack)+Vector3(0,.20,.165)
+		label.rotation.y = PI/2 if rack == 0 else -PI/2
+		label.position = loader(rack)+Vector3(.24 if rack == 0 else -.24,-.14,0)
 		label.font_size = 30
 		label.pixel_size = .0025
 		label.double_sided = false
 		world.bomber.add_child(label)
 		var gate: Node3D = world.instruments.get_node("ChuteShutter%d_rig" % rack)
 		shutters.append(gate)
+		closed_gates.append(gate.position)
 	sound = AudioStreamPlayer3D.new()
 	sound.stream = preload("res://assets/audio/latch.wav")
 	sound.bus = "Master"
@@ -204,7 +219,7 @@ func reconcile() -> void:
 				models[item.id] = model
 			if moves.has(item.id) and moves[item.id].is_valid(): moves[item.id].kill()
 			var target := slot(rack,i)
-			if reserved[rack] == item.id: target += Vector3(0,-.6,-.2)
+			if reserved[rack] == item.id: target += Vector3(0,-.6,outlet(rack).z-target.z)
 			moves[item.id] = create_tween()
 			moves[item.id].tween_property(models[item.id],"position",target,.28).set_trans(Tween.TRANS_SINE)
 	for id in models.keys():
@@ -235,7 +250,8 @@ func _physics_process(delta: float) -> void:
 					else: release_sound.rpc(rack)
 					publish()
 				elif remaining[rack] == 0: publish()
-		shutters[rack].position.x = lerpf(shutters[rack].position.x,(-1.32 if rack == 0 else 1.32)+(.65 if remaining[rack]>0 else 0),minf(1,delta*10))
+		var open_fraction := clampf((CYCLE_TIME-remaining[rack])/RELEASE_DELAY,0,1) if reserved[rack] else clampf(remaining[rack]/CLOSE_TIME,0,1)
+		shutters[rack].position = closed_gates[rack] + Vector3.FORWARD * 1.04 * smoothstep(0,1,open_fraction)
 	var a := aimed(multiplayer.get_unique_id()) if not Game.menu_open else {}
 	highlight.visible = not a.is_empty() and a.id != 0
 	if highlight.visible: highlight.position = slot(a.rack,a.index)

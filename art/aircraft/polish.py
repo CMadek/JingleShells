@@ -10,15 +10,16 @@ instrument_glow=mat("Warm luminous dial ink",(.8,.63,.32),0,.6,.4)
 # A continuous warm headliner fits the actual curved shell, above every window.
 roof_rings=[]
 for y,w,h,c in airframe_stations:
-    if not -11.9<=y<=11.2:continue
+    if not -12.1<=y<=11.2:continue
     low=3.72+max(0,min(1,(y-5.4)/1.35))*.81
-    if c+h-.09<=low:continue
-    power=airframe_power(y)
-    start=asin(airframe_signed_power((low-c)/(h-.085),power/2))
-    roof_rings.append([((w-.085)*airframe_signed_power(cos(a),2/power),y,c+(h-.085)*airframe_signed_power(sin(a),2/power)) for a in [start+(pi-2*start)*i/48 for i in range(49)]])
-roof=loft("Fitted wool headliner",roof_rings,lining,False)
+    crown=min(.28,c+h-low-.07)
+    if crown<=0:continue
+    width=airframe_surface_x(y,low)-.023
+    roof_rings.append([(width*u,y,low+crown*(1-u*u)) for u in [1-i/12 for i in range(25)]])
+# A continuous vaulted liner with a solid edge. Its underside is also the jump collider.
+roof=loft("Fitted wool headliner",[row+[(x,y,z+.075) for x,y,z in reversed(row)] for row in roof_rings],lining,True)
 for f in roof.data.polygons:f.use_smooth=True
-for side in (0,48):line("Headliner brass piping",[ring[side] for ring in roof_rings],.014,gold)
+for side in (0,24):line("Headliner brass piping",[ring[side] for ring in roof_rings],.014,gold)
 for y in (-10.0,-7.0,-3.0,1.0,5.4,8.0):
     ring=min(roof_rings,key=lambda r:abs(r[0][1]-y))
     line("Padded roof bow",[(x,y,z-.015) for x,_,z in ring],.042,lining)
@@ -27,7 +28,7 @@ for y in (-10.0,-7.0,-3.0,1.0,5.4,8.0):
 # Low fitted pads lend warmth at the wall without occupying the aisle.
 for side in (-1,1):
     spans=[(-11.8,-11.35),(-10.05,-7.25),(-6.65,-3.30),(-3.15,.25),(.40,3.70)]
-    if side==1:spans=[(-10.05,-7.25),(-6.65,-3.3),(-3.15,.25),(.40,5.45)]
+    if side==1:spans=[(-11.9,-7.25),(-6.65,-3.3),(-3.15,.25),(.40,5.45)]
     for lo,hi in spans:
         rings=[]
         for y in [lo+(hi-lo)*i/16 for i in range(17)]:
@@ -62,10 +63,6 @@ for side in (-1,1):
     line("Leather stair handgrip",[(side*1.04,2.70,.92),(side*1.04,5.35,2.245)],.043,leather)
     for y,z in [(2.7,.92),(5.35,2.245)]:
         rod("Handgrip ferrule",(side*1.04,y-.025,z-.012),(side*1.04,y+.025,z+.012),.046,gold,20)
-    # Flush inset faces give the cargo machinery a crafted cabinet silhouette.
-    for y in (-2.0,-3.1,-4.2):
-        box("Cargo feed cabinet inset",(side*1.691,y,.35),(.018,.91,.41),berry,.028)
-        rod("Feed cabinet recessed pull",(side*1.675,y-.12,.45),(side*1.675,y+.12,.45),.013,gold,16)
 
 # A fitted, restrained eight-point North Star on each tail side.
 for side in (-1,1):
@@ -105,6 +102,7 @@ for side in (-1,1):
 for m in [red,berry,pine,cream,cream_coat,panel_finish]:surfaces.finish(m,"paint",.43,.10)
 surfaces.finish(gold,"brass",.33,.72)
 surfaces.finish(iron,"paint",.55,.58)
+for m in (paint,case,steel):surfaces.finish(m,"paint",.55,.58)
 for m in wood:surfaces.finish(m,"wood",.64,0)
 for m in (carpet,runner,binding):surfaces.finish(m,"wool",.94,0)
 for m in (leather,pad):surfaces.finish(m,"leather",.79,0)

@@ -52,6 +52,9 @@ func _ready() -> void:
 	await get_tree().create_timer(.3).timeout
 	get_tree().quit(failures)
 func host_checks() -> void:
+	w.mess.holders[0] = w.mess.PINNED
+	w.mess.set_body(0,w.mess.board.global_transform,Vector3.ZERO)
+	w.mess.publish()
 	w.mess.set_mark(Vector3(90,0,-840))
 	w.mess.earn(3)
 	w.set_physics_process(false)
@@ -63,6 +66,8 @@ func host_checks() -> void:
 	w.in_steer = .4
 	w.in_throttle = .2
 	w.in_climb = .1
+	w.burner_heat = .82
+	w.burner_locked = true
 	w.previous_plane = w.bomber.transform
 	w.moving_hull.transform = w.bomber.transform
 	w.queues.queues = [[{"id":101,"kind":1},{"id":102,"kind":2}],[{"id":103,"kind":2}]]
@@ -97,23 +102,25 @@ func client_checks() -> void:
 	check(w.mess.vouchers == 15 and w.mess.waypoint == Vector3(90,0,-840),"Late join receives quartermaster and map state")
 	verify_chart.rpc_id(1,w.district.route_seed,hash(w.district.sites),w.mess.waypoint)
 	check(absf(w.in_steer-.4)<.001 and absf(w.in_throttle-.2)<.001 and absf(w.in_climb-.1)<.001,"Client receives flight controls for delayed-release prediction")
+	check(is_equal_approx(w.burner_heat,.82) and w.burner_locked and w.instruments.annunciator.text == "COOLING","Late join restores the hot engine and its cockpit warning")
 	var elf = w.players[id]
 	elf.set_physics_process(false)
-	elf.position = Vector3(-32.1,.12,841)
-	var chart_direction: Vector3 = (w.mess.props[0].position-elf.head.global_position).normalized()
+	check(w.mess.board_page.visible and w.mess.holders[0] == w.mess.PINNED,"Late join restores the mounted chart")
+	elf.position = w.bomber.to_global(Vector3(-1.65,.05,.37))
+	var chart_direction: Vector3 = (w.mess.board.global_position-elf.head.global_position).normalized()
 	elf.rotation.y = atan2(-chart_direction.x,-chart_direction.z)
 	elf.pitch = asin(chart_direction.y)
 	elf.head.rotation.x = elf.pitch
 	main.sync_elf.rpc(elf.position,elf.rotation.y,elf.pitch,false,true)
 	await get_tree().create_timer(.5).timeout
-	w.mess.request("prop0")
+	w.mess.request("take_chart")
 	for i in 40:
 		if w.mess.held(id) == 0: break
 		await get_tree().create_timer(.05).timeout
-	check(w.mess.held(id) == 0,"Client picks up the shared chart via host")
-	w.mess.request("drop")
+	check(w.mess.held(id) == 0 and not w.mess.board_page.visible,"Client takes the shared chart off the board via host")
+	w.mess.request("pin_chart")
 	await get_tree().create_timer(.2).timeout
-	check(w.mess.held(id) < 0,"Host replicates chart release")
+	check(w.mess.held(id) < 0 and w.mess.board_page.visible,"Host replicates chart pinning")
 	elf.position = Vector3(-28.4,.1,836.6)
 	var clerk_direction: Vector3 = (w.mess.CLERK_FACE-elf.head.global_position).normalized()
 	elf.rotation.y = atan2(-clerk_direction.x,-clerk_direction.z)

@@ -50,6 +50,7 @@ func _draw() -> void:
 	frame(ROUTE)
 	frame(VILLAGE)
 	var bounds: Rect2 = district.bounds.expand(Vector2(0,900)).grow(80)
+	if mess.waypoint.is_finite(): bounds = bounds.expand(Vector2(mess.waypoint.x,mess.waypoint.z))
 	for elf in world.players.values():
 		bounds = bounds.expand(Vector2(elf.position.x,elf.position.z)).grow(.1)
 	bounds = bounds.expand(Vector2(world.bomber.position.x,world.bomber.position.z)).grow(24)
@@ -58,6 +59,10 @@ func _draw() -> void:
 		var area: Rect2 = pair[0]
 		var panel: Rect2 = pair[1]
 		if panel == ROUTE:
+			for grove in district.groves:
+				var center := plot(grove,area,panel)
+				if panel.has_point(center):
+					draw_colored_polygon(PackedVector2Array([center+Vector2(0,-2.5),center+Vector2(2,2),center+Vector2(-2,2)]), TEAL)
 			draw_line(plot(Vector3(0,0,-300),area,panel),plot(Vector3(0,0,900),area,panel),INK,3)
 			var base := plot(world.Airfield.SPAWN,area,panel)
 			draw_rect(Rect2(base-Vector2(3,3),Vector2(6,6)),RED)
@@ -99,7 +104,9 @@ func _draw() -> void:
 			draw_colored_polygon(PackedVector2Array([plane+dir*9,plane-dir*6+dir.orthogonal()*5,plane-dir*4,plane-dir*6-dir.orthogonal()*5]),INK)
 		if mess.waypoint.is_finite():
 			var mark := plot(mess.waypoint,area,panel)
-			if panel.has_point(mark): draw_arc(mark,8,-.2,TAU,30,RED,2.5,true)
+			if panel.has_point(mark):
+				if panel.has_point(plane) and plane.distance_to(mark)>12: draw_dashed_line(plane,mark,RED,1.5,5,true)
+				draw_arc(mark,8,-.2,TAU,30,RED,2.5,true)
 	lettering(Vector2(29,524),"▲ Aircraft     ◎ Crew     ● Nice     ○ Delivered     ■ Naughty     × Ruin     • Loose cargo",16)
 	lettering(Vector2(29,557),"%s     /     ALT %d m     /     %d m/s     /     %d CREW" % [world.phase,world.bomber.position.y,world.speed,world.players.size()],17)
 	var balance: int = mess.vouchers

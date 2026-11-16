@@ -13,7 +13,7 @@ const HELP := """THE LAST STOP
 Sit on a couch cushion with {interact}; {jump} gets you up. Grab a practice parcel and hold/release {crew_primary} to aim for the chimney. Face the quartermaster and press {interact} to chat or shop. Buy a wrapped present to carry, or upgrade the whole crew with a throwing mitt or quick sling. Successful gift deliveries earn crew vouchers.
 
 NAVIGATION
-Take the folded chart from the coffee table with {interact}. Use {crew_primary} to read or fold it, {mark_chart} over the paper to pencil in a shared waypoint, and {show_chart} to offer it to a crewmate. The runway and departure lounge stay put; each new lobby surveys a different delivery district.
+Take the folded chart from the coffee table with {interact}. Use {crew_primary} to read or fold it, {mark_chart} over the paper to pencil in a shared waypoint, and {show_chart} to offer it to a crewmate. In the cabin, face the board beside the dispatch terminal and press {interact} to pin the chart. Anyone can read it there with {crew_primary} or take it down with {interact}. The runway and departure lounge stay put; each new lobby surveys a different delivery district.
 
 NORTH STAR MK II
 Collect presents and bombs from the rear stores with {interact}. Carry them to the loading end of either return track and press {interact}. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
@@ -27,13 +27,17 @@ VENTRAL TURRET
 Use {crew_primary} at the BELLY GUN hatch to the right of the cockpit stairs with empty hands to climb into the glass pod. {turret_leave} returns you to the cabin beside the stairs. Mouse aims, {turret_fire} fires a snowball, and holding {turret_look} lets you look around without moving the guns. The turret rotates through 360 degrees; shots into the aircraft are blocked. Snowballs create cosmetic impacts only. A teammate can operate delivery independently.
 
 FLIGHT AND DELIVERY
-Walk up the cockpit steps; {interact} at the helm enters/leaves. {move_forward}/{move_back} throttle (hold {move_back} to brake), {move_left}/{move_right} turn, {jump} climb/take off at 18 m/s, {descend} descend. {pilot_view} toggles cockpit/chase view; hold {pilot_orbit} and drag to orbit the chase camera.
+Use {interact} at the helm. {move_forward}/{move_back} moves the throttle lever. Hold {jump} at 18 m/s to lift off and release it at your desired pitch. {pilot_view} switches between cockpit and chase view. Hold {pilot_orbit} and drag to orbit.
+Flight assist is on at takeoff. Release steering and pitch to level out. Hold {afterburner} in the air for extra thrust. Release it to coast back to your throttle setting. Half throttle works well over a delivery.
+Watch BURNER HEAT on the dash. EASE OFF warns at 75%. Releasing early lets you boost again immediately. At 100%, boost cuts out. Release {afterburner} and let the needle cool to RESET (35%). READY means you can boost again.
+Press {aerobatics} for aerobatics. {move_left}/{move_right} roll the wings and {jump}/{descend} pitch around the wing axis. Bank, then pull to turn. Combine both axes for a barrel roll. Release to keep your attitude, or press {aerobatics} again for assist. Brake while pulling for a tighter turn.
+At 14 m/s or faster, release the flight controls and press {cruise_hold} to level out and hold heading and altitude. Leave the helm with {interact} to work in the cabin. Any flight input or another press of {cruise_hold} returns control to the pilot.
 Presents: nice house +10, precise nice chimney +15 total; naughty house −5. Bombs destroy only the house directly hit and add no score.
 
 WALKING
 {move_forward}/{move_left}/{move_back}/{move_right} move • {jump} jump • {crouch} crouch • {interact} interact
 Hold/release {crew_primary} to throw held cargo • {drop_cargo} drop
-{interact} operates the outside boarding door from either side. The rear emergency exit tears off when released and restores next level.
+{interact} operates the outside boarding door from either side.
 
 {flight_menu} opens the menu. Online play continues; your gameplay input is suppressed. {launcher_leave} leaves the delivery console; {turret_leave} leaves the turret."""
 var root: Control
@@ -457,24 +461,29 @@ func field_row(title: String) -> HBoxContainer:
 	row.add_child(title_label)
 	return row
 
-func choice(title: String, key: String, items: Array) -> void:
+func choice(title: String, key: String, items: Array) -> OptionButton:
 	var row := field_row(title)
 	var node := OptionButton.new()
+	node.name = key
+	node.accessibility_name = title
 	for item in items:
 		node.add_item(item)
 	node.select(draft[key])
 	node.custom_minimum_size.x = 155
 	node.item_selected.connect(func(index: int): draft[key] = index)
 	row.add_child(node)
+	return node
 
-func toggle(title: String, key: String) -> void:
+func toggle(title: String, key: String) -> CheckBox:
 	var node := CheckBox.new()
+	node.name = key
 	node.text = title
 	node.button_pressed = draft[key]
 	node.toggled.connect(func(value: bool): draft[key] = value)
 	box.add_child(node)
+	return node
 
-func number(title: String, key: String, minimum: float, maximum: float, step: float, unit := "") -> void:
+func number(title: String, key: String, minimum: float, maximum: float, step: float, unit := "", disabled_by: CheckBox = null) -> void:
 	var row := field_row(title)
 	var input := HBoxContainer.new()
 	input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -489,6 +498,7 @@ func number(title: String, key: String, minimum: float, maximum: float, step: fl
 	slider.step = step
 	slider.value = draft[key]
 	slider.tooltip_text = title
+	slider.accessibility_name = title
 	input.add_child(slider)
 	var node := SpinBox.new()
 	node.custom_minimum_size.x = 82
@@ -499,10 +509,50 @@ func number(title: String, key: String, minimum: float, maximum: float, step: fl
 	node.suffix = unit
 	node.get_line_edit().add_theme_stylebox_override("normal", Look.surface(Color.TRANSPARENT, 4, 2))
 	node.tooltip_text = title
+	node.get_line_edit().accessibility_name = title
 	slider.share(node)
 	node.value_changed.connect(func(value: float): draft[key] = int(value) if key == "fps" else value)
 	input.add_child(node)
 	number_fields[key] = node
+	if disabled_by:
+		var update_input := func(disabled: bool):
+			if disabled and node.get_line_edit().has_focus():
+				node.apply()
+			slider.editable = not disabled
+			node.editable = not disabled
+			slider.focus_mode = Control.FOCUS_NONE if disabled else Control.FOCUS_ALL
+			node.get_line_edit().focus_mode = slider.focus_mode
+			slider.modulate.a = 0.65 if disabled else 1.0
+		disabled_by.toggled.connect(update_input)
+		update_input.call(disabled_by.button_pressed)
+
+func build_display_options() -> void:
+	DispatchPage.section(box, "Display")
+	var mode := choice("Window Mode", "mode", ["Windowed", "Borderless", "Fullscreen"])
+	var sizes := []
+	for size: Vector2i in Game.RESOLUTIONS:
+		sizes.append("%d × %d" % [size.x, size.y])
+	var resolution := choice("Resolution", "resolution", sizes)
+	var update_resolution := func(index: int):
+		resolution.disabled = index != 0
+		if resolution.disabled:
+			resolution.select(-1)
+			resolution.text = "Desktop resolution"
+		else:
+			resolution.select(draft.resolution)
+	mode.item_selected.connect(update_resolution)
+	update_resolution.call(draft.mode)
+	var vsync := toggle("VSync", "vsync")
+	var unlocked := toggle("Unlock FPS", "unlocked_fps")
+	number("Target FPS", "fps", Game.MIN_FPS, Game.MAX_FPS, 1, "", unlocked)
+	var sync_hint := label("VSync limits FPS to your display’s refresh rate.", 16)
+	sync_hint.add_theme_color_override("font_color", Color("#c9c8b3"))
+	var update_hint := func(_pressed: bool):
+		sync_hint.visible = vsync.button_pressed and unlocked.button_pressed
+	vsync.toggled.connect(update_hint)
+	unlocked.toggled.connect(update_hint)
+	update_hint.call(false)
+	number("Field of View", "fov", 60, 110, 1, "°")
 
 func build_options(reset: bool) -> void:
 	draft = Game.DEFAULTS.duplicate() if reset else Game.values.duplicate()
@@ -532,12 +582,7 @@ func build_options(reset: bool) -> void:
 	hint.add_theme_stylebox_override("normal", Look.surface(Color.TRANSPARENT, 36, 0))
 	hint.add_theme_color_override("font_color", Color("#c9c8b3"))
 	box = tab_sections[1]
-	DispatchPage.section(box, "Display")
-	choice("Window Mode", "mode", ["Windowed", "Borderless", "Fullscreen"])
-	choice("Resolution", "resolution", ["1280 × 720", "1600 × 900", "1920 × 1080"])
-	toggle("VSync", "vsync")
-	number("Frame Limit (0 = unlimited)", "fps", 0, 360, 1)
-	number("Field of View", "fov", 60, 110, 1, "°")
+	build_display_options()
 	box = tab_sections[2]
 	DispatchPage.section(box, "Mouse Look")
 	number("Sensitivity", "sensitivity", 0.2, 3, 0.1)
@@ -623,8 +668,9 @@ func apply_options() -> void:
 		field.apply()
 	previous = Game.values.duplicate()
 	Game.values = draft.duplicate()
-	Game.apply_settings()
-	if previous.mode != draft.mode or previous.resolution != draft.resolution:
+	var window_changed: bool = previous.mode != draft.mode or (draft.mode == 0 and previous.resolution != draft.resolution)
+	Game.apply_settings(window_changed)
+	if window_changed:
 		display_dialog = ConfirmationDialog.new()
 		display_dialog.title = "Keep display settings?"
 		display_dialog.theme = root.theme
@@ -633,13 +679,20 @@ func apply_options() -> void:
 		display_dialog.confirmed.connect(func():
 			display_dialog.queue_free()
 			display_dialog = null
-			Game.save_settings()
-			show_page(return_page))
+			_save_options(true))
 		display_dialog.canceled.connect(_revert_display)
 		display_dialog.popup_centered()
 	else:
-		Game.save_settings()
-		show_page(return_page)
+		_save_options(false)
+
+func _save_options(window_changed: bool) -> void:
+	var error := Game.save_settings()
+	if error != OK:
+		Game.values = previous.duplicate()
+		Game.apply_settings(window_changed)
+		show_notice("Could not save settings: " + error_string(error))
+		return
+	show_page(return_page)
 
 func _revert_display() -> void:
 	if not is_instance_valid(display_dialog):
@@ -648,4 +701,6 @@ func _revert_display() -> void:
 	display_dialog = null
 	Game.values = previous.duplicate()
 	Game.apply_settings()
+	var selected := active_tab
 	show_page("options", "Display changes reverted.")
+	select_tab(selected, true)

@@ -23,6 +23,9 @@ const ACTIONS := {
 	"show_chart": ["Offer flight chart", KEY_R, WALK],
 	"mark_chart": ["Mark flight chart", -MOUSE_BUTTON_RIGHT, WALK],
 	"pilot_view": ["Switch pilot view", KEY_V, PILOT],
+	"aerobatics": ["Toggle aerobatic flight", KEY_R, PILOT],
+	"afterburner": ["Hold afterburner", KEY_F, PILOT],
+	"cruise_hold": ["Toggle cruise hold", KEY_C, PILOT],
 	"pilot_orbit": ["Orbit chase camera", -MOUSE_BUTTON_RIGHT, PILOT],
 	"launcher_left": ["Select left launcher", KEY_1, DELIVERY],
 	"launcher_right": ["Select right launcher", KEY_2, DELIVERY],
@@ -55,6 +58,13 @@ func from_config(config: ConfigFile) -> Dictionary:
 		var code = config.get_value("bindings", action, result[action])
 		if typeof(code) == TYPE_INT and allowed(action, code):
 			result[action] = code
+	# Preserve older custom bindings when a newly introduced action needs a key.
+	for action in ["cruise_hold", "aerobatics", "afterburner"]:
+		if config.has_section_key("bindings", action) or conflict(action, result[action], result) == "": continue
+		for code in range(KEY_A, KEY_Z + 1):
+			if conflict(action, code, result) == "":
+				result[action] = code
+				break
 	# Keep valid swaps. Reverting a collision can expose another default collision.
 	while true:
 		var repair := []

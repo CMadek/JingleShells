@@ -16,7 +16,7 @@ func _ready() -> void:
 	w.queues.set_physics_process(false)
 	w.stations.set_physics_process(false)
 	var dt := 1.0/Engine.physics_ticks_per_second
-	var scenarios := [Vector3(14,0,0),Vector3(25,.45,0),Vector3(35,-.35,.35),Vector3(20,0,-.3)]
+	var scenarios := [Vector3(14,0,0),Vector3(25,.45,0),Vector3(35,-.35,.35),Vector3(20,0,-.3),Vector3(22,0,0),Vector3(53,0,0),Vector3(70,.25,0),Vector3(72,.25,0)]
 	for rack in 2:
 		for scenario in scenarios:
 			w.queues.reset()
@@ -31,6 +31,19 @@ func _ready() -> void:
 			w.in_steer = scenario.y
 			w.in_climb = scenario.z
 			w.grounded = false
+			w.aerobatics = scenario.x == 53
+			w.afterburner_held = scenario.x >= 70.0
+			w.burner_heat = .98 if scenario.x == 72 else 0.0
+			w.burner_locked = false
+			if w.aerobatics:
+				w.in_throttle = 0
+				w.throttle = 1
+			w.cruise_target = w.CRUISE_OFF
+			if scenario.x == 22:
+				w.in_throttle = 0
+				w.pitch = deg_to_rad(8)
+				w.roll = deg_to_rad(-18)
+				w.cruise_target = Vector2(w.heading + .1, w.bomber.position.y - 1.0)
 			w._apply_attitude()
 			w.physics_delta = dt
 			w.previous_plane = w.bomber.transform
@@ -59,6 +72,7 @@ func _ready() -> void:
 				if not w.loose.has(id): await get_tree().physics_frame
 			check(ticks==ceili(w.queues.RELEASE_DELAY/dt-.00001),"Preview and real cycle agree on commit tick")
 			check(w.loose.has(id),"Real cycle spawned present")
+			if scenario.x == 72: check(w.burner_locked,"Burner cuts off during the predicted release delay")
 			if not w.loose.has(id): continue
 			var body: RigidBody3D = w.loose[id]
 			check(body.position.distance_to(state.pose.origin)<.01,"Forecast release position matches real spawn")
@@ -68,6 +82,10 @@ func _ready() -> void:
 			for tick in 420:
 				await get_tree().physics_frame
 				if body.has_meta("impact_collider") or body.position.y<.27: break
+				# The real aircraft continues past the outlet while the parcel falls.
+				w.previous_plane = w.bomber.transform
+				w._fly(dt)
+				w.moving_hull.transform = w.bomber.transform
 			var error := Vector2(body.position.x-predicted.point.x,body.position.z-predicted.point.z).length()
 			print("DELAY IMPACT ERROR rack=",rack," controls=",scenario,": ",error)
 			check(error<.8,"Crosshair matches actual delayed present impact within 0.8m")

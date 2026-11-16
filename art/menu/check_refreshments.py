@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[2]
 bpy.ops.wm.open_mainfile(filepath=str(ROOT / 'art/menu/off_duty_crew.blend'))
 rig = bpy.data.objects['ElfRig']
 rig.animation_data.action = bpy.data.actions['menu_cocoa']
-assert not any('cigarette' in material.name.lower() for material in bpy.data.materials)
-assert 'SmokeTip' not in rig.data.bones
+assert bpy.data.materials.get('Cigarette ember')
+assert rig.data.bones['SmokeTip'].parent.name == 'Head'
 assert 'MugSteam' in rig.data.bones
 
 def transform(name):

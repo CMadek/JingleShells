@@ -64,9 +64,14 @@ func setup(mess: Node3D, actor: Node3D, voice_origin: Vector3) -> void:
 	voice.unit_size = 3.0
 	voice.max_distance = 10
 	voice.volume_db = -5
+	set_process(false)
+
+func _enter_tree() -> void:
 	get_viewport().size_changed.connect(fit_panel)
 	fit_panel()
-	set_process(false)
+
+func _exit_tree() -> void:
+	get_viewport().size_changed.disconnect(fit_panel)
 
 func fit_panel() -> void:
 	var half_width := minf(325, get_viewport_rect().size.x * .5 - 16)

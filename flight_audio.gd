@@ -2,6 +2,8 @@ extends Node3D
 ## Presentation follows replicated flight/access state; no extra input authority.
 signal effect_played(kind: String)
 const ENGINE = preload("res://assets/audio/engine_loop.wav")
+const IGNITION = preload("res://assets/audio/afterburner_ignite.wav")
+const BURNER = preload("res://assets/audio/afterburner_loop.wav")
 const WIND = preload("res://assets/audio/wind_loop.wav")
 const RUNNERS = preload("res://assets/audio/runner_loop.wav")
 const MOTOR = preload("res://assets/audio/mechanism_loop.wav")
@@ -11,6 +13,9 @@ const BOMB = preload("res://assets/audio/bomb_burst.wav")
 const PRESENT = preload("res://assets/audio/present_pop.wav")
 var world: Node3D
 var engine: AudioStreamPlayer3D
+var ignition: AudioStreamPlayer3D
+var burner: AudioStreamPlayer3D
+var was_burning := false
 var wind: AudioStreamPlayer3D
 var runners: AudioStreamPlayer3D
 var landing: AudioStreamPlayer3D
@@ -45,6 +50,10 @@ func voice(stream: AudioStream, pos: Vector3, loop := false) -> AudioStreamPlaye
 func build(w: Node3D) -> void:
 	world = w
 	engine = voice(ENGINE,Vector3(0,4.35,9.1),true)
+	ignition = voice(IGNITION, Vector3(0,4.35,12.2))
+	burner = voice(BURNER, ignition.position, true)
+	ignition.unit_size = 23
+	burner.unit_size = 23
 	wind = voice(WIND,Vector3(0,1,0),true)
 	runners = voice(RUNNERS,Vector3(0,-1.5,1),true)
 	landing = voice(LANDING,Vector3(0,-1,0))
@@ -65,6 +74,8 @@ func reset_state() -> void:
 	last_position = world.bomber.global_position
 	last_vertical_speed = 0
 	landing.stop()
+	ignition.stop()
+	was_burning = false
 	for p in latches.values(): p.stop()
 	for p in impacts: p.stop()
 	for key in moving: moving[key] = false
@@ -89,14 +100,23 @@ func _exit_tree() -> void:
 		if p is AudioStreamPlayer3D: p.stop()
 
 func update_audio(delta: float) -> void:
-	var speed: float = clampf(world.speed/world.MAX_SPEED,0,1)
+	var speed: float = clampf(world.speed/60.0,0,1) # Normal-flight wind and runner mix.
 	var throttle: float = clampf(world.throttle,0,1)
 	var camera := get_viewport().get_camera_3d()
 	var inside: bool = camera != null and world.aboard(camera.global_position)
 	var cabin := .5 if inside else 1.0
-	mix_loop(engine,sqrt(throttle)*.17*cabin,.65+throttle*.7+speed*.15,delta)
+	var burning: bool = world.afterburner_active()
+	if burning and not was_burning:
+		ignition.volume_db = -8.0 if inside else -4.0
+		ignition.play()
+		effect_played.emit("afterburner_ignite")
+	was_burning = burning
+	var power := 1.0 if burning else throttle
+	mix_loop(engine,sqrt(power)*.17*cabin,.65+power*.7+speed*.15,delta)
+	var burner_pitch: float = .90 + .26 * clampf(world.speed/world.AFTERBURNER_SPEED,0,1)
+	mix_loop(burner,.48*cabin if burning else 0.0,burner_pitch,delta)
 	# Only exterior door openings admit wind; the internal gun hatch does not.
-	var exposure: float = maxf(clampf(world.access.amount.door,0,1),1.0 if world.emergency.gone else 0.0)
+	var exposure: float = clampf(world.access.amount.door,0,1)
 	if exposure > .001:
 		mix_loop(wind,speed*speed*.10*exposure*cabin*(.2 if world.grounded else 1.0),.85+speed*.35,delta)
 	else:

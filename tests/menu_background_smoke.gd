@@ -19,16 +19,17 @@ func _ready() -> void:
 	check(main.get_node_or_null("World") == null, "Menu must not start gameplay")
 	check(background.stage.actors.size() == 3, "Three crew members are staged")
 	for i in background.stage.actors.size():
-		var props := {"Candy cane":0, "Cocoa":0}
+		var props := {"Candy cane":0, "Cigarette":0, "Cocoa":0}
 		for mesh in background.stage.actors[i].find_children("*", "MeshInstance3D", true, false):
 			for surface in mesh.mesh.get_surface_count():
 				var material: Material = mesh.get_active_material(surface)
-				check(not material.resource_name.begins_with("Cigarette"), "Cigarettes must be removed from the exported crew")
 				if mesh.visible:
 					for prefix in props:
 						if material.resource_name.begins_with(prefix): props[prefix] += 1
 		check((props["Cocoa"] > 0) == (i == 0), "Only the right elf carries the cocoa mug")
-		check((props["Candy cane"] > 0) == (i == 1), "Only the seated elf has a candy cane")
+		check(props["Candy cane"] == 0 and (props["Cigarette"] > 0) == (i == 1), "Only the seated title elf smokes")
+	var smoke = background.stage.actors[1].find_children("CigaretteSmoke","CPUParticles3D",true,false)
+	check(smoke.size() == 1 and smoke[0].get_parent().bone_name == "SmokeTip", "Smoke follows the lit tip")
 	var steam = background.find_children("CocoaSteam", "CPUParticles3D", true, false)
 	check(steam.size() == 1, "Only the mug emits steam")
 	if steam.size() == 1:

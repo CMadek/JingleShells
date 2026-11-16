@@ -9,6 +9,7 @@ const SEATS := [Vector3(-34.55,.10,839.2),Vector3(-34.55,.10,840.65),Vector3(-34
 const COUNTER := [Vector3(-29.76,1.48,834.65),Vector3(-26.66,1.48,834.65)]
 const CLERK := Vector3(-28.4,.18,833.49)
 const CLERK_FACE := CLERK + Vector3(0,1.73,.24)
+const PINNED := -1  # Docked ownership of the single physical chart. Peer IDs are positive.
 const Cargo := preload("res://cargo.gd")
 # The first two entries also have physical samples on the counter.
 const STOCK := [
@@ -38,6 +39,8 @@ var stamp: Node3D
 var bell: AudioStreamPlayer3D
 var placard: Label3D
 var chart: Control
+var board: Node3D
+var board_page: MeshInstance3D
 var sheet: TextureRect
 var dialogue: QuartermasterDialogue
 var graphics: Node3D
@@ -79,6 +82,19 @@ func build(w: Node3D, depot: Node3D) -> void:
 	sheet.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	sheet.texture = viewport.get_texture()
 	sheet.hide()
+	board = world.instruments.get_node("ChartBoard_rig")
+	board_page = MeshInstance3D.new()
+	var paper := QuadMesh.new()
+	paper.size = Vector2(1.98,1.2375)
+	board_page.mesh = paper
+	board_page.rotation.y = PI/2
+	var ink := StandardMaterial3D.new()
+	ink.albedo_texture = viewport.get_texture()
+	ink.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	board_page.material_override = ink
+	board_page.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	board.add_child(board_page)
+	board_page.hide()
 	for i in HOME.size():
 		var body := RigidBody3D.new()
 		body.name = "Prop%d" % i
@@ -113,6 +129,14 @@ func target(id: int) -> String:
 	for i in props.size():
 		if holders[i] == 0 or (i == 0 and map_out and holders[i] != id):
 			options["prop%d" % i] = [props[i].position,.48]
+	# Intersect the visible board rectangle so its corners work while the plane banks.
+	var local_eye := board.to_local(view.origin)
+	var direction := board.global_basis.inverse() * (-view.basis.z)
+	if local_eye.x > 0 and direction.x < -.01:
+		var hit := local_eye + direction * (-local_eye.x / direction.x)
+		if absf(hit.z) <= 1.14 and absf(hit.y) <= .82:
+			var action := "take_chart" if holders[0] == PINNED else "pin_chart"
+			options[action] = [board.to_global(hit), .05]
 	if in_room(view.origin):
 		options["talk"] = [CLERK_FACE,.52]
 		for i in SEATS.size():
@@ -138,8 +162,12 @@ func target(id: int) -> String:
 func hint(id: int) -> String:
 	var elf = world.players[id]
 	var item := held(id)
-	if not in_room(elf.position) and item < 0: return ""
 	var key := target(id)
+	if key == "take_chart":
+		return "{crew_primary}   Read pinned chart     {interact}   Take chart" if item < 0 and elf.held_kind == 0 else "Flight chart pinned"
+	if key == "pin_chart":
+		return "{interact}   Pin flight chart" if item == 0 else "Bring the flight chart from The Last Stop"
+	if not in_room(elf.position) and item < 0: return ""
 	var line := "THE LAST STOP    /    Crew fund: %d vouchers" % vouchers if in_room(elf.position) else "NORTH STAR   /   Navigation"
 	if dialogue.choosing(): return line
 	if key == "talk" and (not dialogue.visible or dialogue.page == QuartermasterDialogue.Page.RECEIPT): line += "\n{interact}   Talk to the quartermaster"
@@ -162,6 +190,10 @@ func handle_input(id: int, e: InputEvent) -> bool:
 		dialogue.handle_choice_input(e)
 		return true
 	var item := held(id)
+	var at_pinned_chart: bool = holders[0] == PINNED and item < 0 and world.players[id].held_kind == 0
+	if (presenting or (at_pinned_chart and target(id) == "take_chart")) and e.is_action_pressed("crew_primary"):
+		read_sheet(not presenting)
+		return true
 	if item == 0 and e.is_action_pressed("show_chart"):
 		request("offer")
 		return true
@@ -173,12 +205,15 @@ func handle_input(id: int, e: InputEvent) -> bool:
 		if not presenting and (key == "talk" or (key == "" and dialogue.visible and dialogue.page == QuartermasterDialogue.Page.CHAT)):
 			dialogue.converse(world.players[id])
 			return true
+		if key == "pin_chart" or key == "take_chart":
+			if (key == "pin_chart" and item == 0) or (key == "take_chart" and item < 0 and world.players[id].held_kind == 0):
+				request(key)
+			return true
 		if key.begins_with("seat") or key.begins_with("buy") or (item < 0 and key != ""):
 			request(key)
 			return true
 		if item >= 0 and world.access.aimed(world.players[id].head.global_transform) == "": return true
-	if item < 0: return false
-	if item == 0 and presenting and e.is_action_pressed("mark_chart"):
+	if presenting and e.is_action_pressed("mark_chart"):
 		var fit := minf(sheet.size.x/960.0,sheet.size.y/600.0)
 		var px := (sheet.get_local_mouse_position()-sheet.size*.5)/fit+Vector2(480,300)
 		var point: Vector3 = chart.position_on_chart(px)
@@ -186,6 +221,7 @@ func handle_input(id: int, e: InputEvent) -> bool:
 			if multiplayer.is_server(): pencil(id,point)
 			else: pencil_remote.rpc_id(1,point)
 		return true
+	if item < 0: return false
 	if e.is_action_pressed("drop_cargo"):
 		request("drop")
 		return true
@@ -210,7 +246,8 @@ func pencil_remote(point: Vector3) -> void:
 	if multiplayer.is_server(): pencil(multiplayer.get_remote_sender_id(),point)
 
 func pencil(id: int, point: Vector3) -> void:
-	if held(id) != 0 or not point.is_finite() or absf(point.x)>4000 or absf(point.z)>4000: return
+	if held(id) != 0 and (holders[0] != PINNED or target(id) != "take_chart"): return
+	if not point.is_finite() or absf(point.x)>4000 or absf(point.z)>4000: return
 	var next := Vector3(point.x,0,point.z)
 	if waypoint.is_finite() and waypoint.distance_to(next)<12: next = Vector3.INF
 	set_mark.rpc(next)
@@ -283,6 +320,17 @@ func perform(id: int, action: String) -> void:
 		publish()
 		return
 	if action.is_empty() or action != target(id): return
+	if action == "pin_chart" or action == "take_chart":
+		if action == "pin_chart":
+			if item != 0: return
+			holders[0] = PINNED
+		else:
+			if holders[0] != PINNED or item >= 0 or elf.held_kind != 0: return
+			holders[0] = id
+		map_out = false
+		set_body(0,board.global_transform,Vector3.ZERO)
+		publish()
+		return
 	var idx := int(action.right(1))
 	if action.begins_with("seat"):
 		if idx in seats.values(): return
@@ -369,7 +417,9 @@ func refresh() -> void:
 	dialogue.refresh_stock()
 	world.max_throw_speed = base_throw * (1.35 if upgrades & 1 else 1.0)
 	world.charge_seconds = base_charge * (.65 if upgrades & 2 else 1.0)
-	if presenting and holders[0] != multiplayer.get_unique_id(): read_sheet(false)
+	board_page.visible = holders[0] == PINNED
+	props[0].visible = not board_page.visible
+	if presenting and held(multiplayer.get_unique_id()) != 0 and (not board_page.visible or target(multiplayer.get_unique_id()) != "take_chart"): read_sheet(false)
 	placard.text = "CHIMNEY LEAGUE\n%02d   /   BEST %.1f m" % [baskets,record]
 
 func earn(amount: int) -> void:
@@ -417,6 +467,9 @@ func _physics_process(delta: float) -> void:
 	if props.is_empty(): return
 	for i in props.size():
 		var body := props[i]
+		if holders[i] == PINNED:
+			body.global_transform = board.global_transform
+			continue
 		var actor = world.players.get(holders[i])
 		if actor:
 			var view: Transform3D = actor.head.global_transform
@@ -452,7 +505,9 @@ func _physics_process(delta: float) -> void:
 		if reader and reader.position.distance_squared_to(props[0].position) < 400:
 			chart.queue_redraw()
 			chart.get_parent().render_target_update_mode = SubViewport.UPDATE_ONCE
-	sheet.visible = presenting and not Game.menu_open and held(multiplayer.get_unique_id()) == 0
-	props[0].visible = not sheet.visible
+	if presenting and held(multiplayer.get_unique_id()) != 0 and (holders[0] != PINNED or target(multiplayer.get_unique_id()) != "take_chart"):
+		read_sheet(false)
+	sheet.visible = presenting and not Game.menu_open
+	props[0].visible = holders[0] != PINNED and not sheet.visible
 	carrier_phase = fmod(carrier_phase+delta*.05,1.0)
 	carrier.position = Vector3(-31.7+4.9*(1-cos(TAU*carrier_phase)),3.65,835.9)

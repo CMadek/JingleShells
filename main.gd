@@ -1,7 +1,7 @@
 extends Node
 
 const MAX_ELVES := 8
-const PROTOCOL := "jingle-bells-17"
+const PROTOCOL := "jingle-bells-22"
 var ui: CanvasLayer
 var menu_music: AudioStreamPlayer
 var lobby_id := 0
@@ -146,14 +146,14 @@ func quit_game() -> void:
 	get_tree().quit()
 
 @rpc("any_peer", "unreliable_ordered")
-func sync_elf(pos: Vector3, yaw: float, pitch: float, ducked: bool, grounded: bool) -> void:
+func sync_elf(pos: Vector3, yaw: float, pitch: float, ducked: bool, grounded: bool, on_deck := false) -> void:
 	var world := get_node_or_null("World")
 	if not world:
 		return
 	var elf = world.players.get(multiplayer.get_remote_sender_id())
 	if elf:
-		elf.net_pos = pos
-		elf.net_yaw = yaw
+		elf.net_pos = world.bomber.to_global(pos) if on_deck else pos
+		elf.net_yaw = yaw + atan2(world.bomber.basis.z.x, world.bomber.basis.z.z) if on_deck else yaw
 		elf.net_pitch = pitch
 		elf.crouched = ducked
 		elf.net_grounded = grounded

@@ -30,6 +30,7 @@ var orbit_yaw := 0.23
 var orbit_elevation := 0.30
 var shown_yaw := orbit_yaw
 var shown_elevation := orbit_elevation
+var chase_heading := 0.0
 var cam: Camera3D
 var pitch := 0.0
 var net_pos := Vector3.ZERO
@@ -86,6 +87,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if local_pilot and event.is_action_pressed("pilot_view"):
 		world.toggle_pilot_view()
 		return
+	if local_pilot and event.is_action_pressed("aerobatics"):
+		world.request_aerobatics()
+		get_viewport().set_input_as_handled()
+		return
+	if local_pilot and event.is_action_pressed("cruise_hold"):
+		_send_flight_controls()
+		world.request_cruise_hold()
+		get_viewport().set_input_as_handled()
+		return
 	if local_pilot and chase.current and (event.is_action_pressed("pilot_orbit") or event.is_action_released("pilot_orbit")):
 		dragging_orbit = event.is_action_pressed("pilot_orbit")
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if dragging_orbit else Input.MOUSE_MODE_VISIBLE
@@ -97,7 +107,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			orbit_elevation = clampf(orbit_elevation + event.relative.y * .006, -1.15, 1.30)
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		rotate_y(-event.relative.x * MOUSE_SENS * Game.values.sensitivity)
+		rotate_object_local(Vector3.UP, -event.relative.x * MOUSE_SENS * Game.values.sensitivity)
 		pitch = clampf(pitch - event.relative.y * MOUSE_SENS * Game.values.sensitivity * (-1.0 if Game.values.invert else 1.0), -1.5, 1.5)
 		head.rotation.x = pitch
 	elif not local_pilot and (event.is_action_pressed("crew_primary") or event.is_action_released("crew_primary")):
@@ -120,9 +130,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		if station == "delivery":
 			world.stations.request(station)
 			return
-		if world.emergency.aimed(head.global_transform):
-			world.emergency.request()
-			return
 		var item_id: int = world.aimed_loose(head.global_transform) if held_kind == Cargo.Kind.EMPTY else 0
 		if world.pilot_id != peer_id and world.access.aimed(head.global_transform) != "":
 			world.access.request(world.access.aimed(head.global_transform))
@@ -142,6 +149,8 @@ func set_local_pilot(active: bool) -> void:
 		return
 	local_pilot = active
 	dragging_orbit = false
+	cam.fov = Game.values.fov
+	chase.fov = Game.values.fov
 	cam.make_current()
 	if active:
 		rotation.y = world.heading
@@ -169,14 +178,19 @@ func _update_chase(weight: float) -> void:
 	shown_yaw = lerp_angle(shown_yaw, orbit_yaw, weight)
 	shown_elevation = lerpf(shown_elevation, orbit_elevation, weight)
 	var boom := Vector3.BACK.rotated(Vector3.RIGHT, -shown_elevation).rotated(Vector3.UP, shown_yaw)
-	var next := target + plane.global_basis * boom * 25.25
+	# Follow the turn while keeping the horizon steady as the wings bank.
+	# At the top of a loop the compass reverses. Swing the boom through that
+	# change over time while keeping its up vector on the horizon.
+	chase_heading = lerp_angle(chase_heading, world.heading, weight)
+	var chase_basis := Basis.from_euler(Vector3(world.pitch * .65, chase_heading, 0))
+	var next := target + chase_basis * boom * 32.0
 	var ray := PhysicsRayQueryParameters3D.create(target, next, 1)
 	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
 	if not hit.is_empty():
 		next = hit.position + hit.normal * .35
 	chase.global_position = next
 	if next.distance_squared_to(target) > .001:
-		chase.look_at(target, Vector3.UP)
+		chase.look_at(target + Vector3.UP * 2.0 - chase_basis.z * 3.0, Vector3.UP)
 
 
 func _notification(what: int) -> void:
@@ -204,6 +218,22 @@ func keep_upright(yaw_delta: float = 0.0) -> void:
 	var yaw := atan2(global_basis.z.x, global_basis.z.z) + yaw_delta
 	global_basis = Basis(Vector3.UP, yaw)
 
+func _share_pose(on_deck: bool, on_floor: bool) -> void:
+	var pos := global_position
+	var facing := global_basis
+	if on_deck:
+		pos = world.bomber.to_local(pos)
+		facing = world.crew_frame(world.bomber.transform).inverse() * facing
+	world.get_parent().sync_elf.rpc(pos, atan2(facing.z.x, facing.z.z), head.rotation.x, crouched, on_floor, on_deck)
+
+func _send_flight_controls() -> void:
+	if Game.menu_open:
+		world.send_pilot_input(0, 0, 0)
+	else:
+		# Banking and moving the throttle lever are independent at the helm.
+		world.send_pilot_input(Input.get_axis("move_left", "move_right"),
+			Input.get_axis("move_back", "move_forward"), Input.get_axis("descend", "jump"),
+			Input.is_action_pressed("afterburner"))
 
 func _physics_process(delta: float) -> void:
 	var station: String = world.stations.station_for(peer_id)
@@ -228,8 +258,13 @@ func _physics_process(delta: float) -> void:
 		position = world.mess.SEATS[last_lounge_seat] + Vector3(1.55,0,2.9 if last_lounge_seat > 0 else -2.9)
 		net_pos = position
 		last_lounge_seat = -1
+	var on_deck: bool = world.aboard(global_position) or world.pilot_id == peer_id or station != ""
+	var frame: Basis = world.crew_frame(world.bomber.transform) if on_deck else Basis.IDENTITY
+	up_direction = frame.y
+	var relative := frame.inverse() * global_basis
+	var facing_yaw := atan2(relative.z.x, relative.z.z)
 	if station != "turret":
-		keep_upright()
+		global_basis = frame * Basis(Vector3.UP, facing_yaw)
 	head.position.y = lerpf(head.position.y, 1.0 if crouched else 1.6, 1.0 - exp(-camera_smoothing * delta))
 	if not is_multiplayer_authority():
 		capsule_node.shape.height = Crouch.DUCKED if crouched else Crouch.STANDING
@@ -237,32 +272,35 @@ func _physics_process(delta: float) -> void:
 		# Turret transforms come from the replicated gimbal, not walking snapshots.
 		if station != "turret":
 			position = position.lerp(net_pos, 0.35)
-			global_basis = Basis(Vector3.UP, lerp_angle(rotation.y, net_yaw, 0.35))
+			var course := atan2(world.bomber.basis.z.x, world.bomber.basis.z.z) if on_deck else 0.0
+			global_basis = frame * Basis(Vector3.UP, lerp_angle(facing_yaw, net_yaw - course, .35))
 		head.rotation.x = net_pitch
 		return
 
 	if world.stations.station_for(peer_id) != "":
 		velocity = Vector3.ZERO
-		world.get_parent().sync_elf.rpc(position,rotation.y,head.rotation.x,crouched,true)
+		_share_pose(on_deck, true)
 		return
 	var browsing: bool = world.mess.dialogue.choosing()
 	Crouch.update(self, capsule_node, not Game.menu_open and not browsing and world.pilot_id != peer_id and Input.is_action_pressed("crouch"))
 	if world.pilot_id == peer_id:
 		velocity = Vector3.ZERO
 		global_position = world.bomber.to_global(world.HELM_POS)
+		global_basis = frame
+		var burn: float = clampf(world.speed / world.AFTERBURNER_SPEED, 0, 1) if world.afterburner_active() else 0.0
+		var weight := 1.0 - exp(-4.0 * delta)
+		cam.fov = lerpf(cam.fov, minf(110.0, Game.values.fov + 2.5 * burn), weight)
+		chase.fov = lerpf(chase.fov, minf(110.0, Game.values.fov + 5.0 * burn), weight)
 		if chase.current:
 			_update_chase(1.0 - exp(-7.0 * delta))
-		var v := Vector2.ZERO if Game.menu_open else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-		world.send_pilot_input(v.x, -v.y, 0.0 if Game.menu_open else Input.get_axis("descend", "jump"))
+		_send_flight_controls()
 	else:
+		var vertical := velocity.dot(up_direction) - GRAVITY * delta
 		if is_on_floor():
-			velocity.y = JUMP_SPEED if (not Game.menu_open and not world.mess.presenting and not browsing and Input.is_action_just_pressed("jump")) else 0.0
-		else:
-			velocity.y -= GRAVITY * delta
+			vertical = JUMP_SPEED if (not Game.menu_open and not world.mess.presenting and not browsing and Input.is_action_just_pressed("jump")) else 0.0
 		var input := Vector2.ZERO if Game.menu_open or world.mess.presenting or browsing else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		var dir := global_transform.basis * Vector3(input.x, 0, input.y)
-		velocity.x = dir.x * (crouch_speed if crouched else WALK_SPEED)
-		velocity.z = dir.z * (crouch_speed if crouched else WALK_SPEED)
+		velocity = dir * (crouch_speed if crouched else WALK_SPEED) + up_direction * vertical
 		move_and_slide()
 
 	# Safety net: if you somehow fall out of the ship, hop back in.
@@ -270,4 +308,4 @@ func _physics_process(delta: float) -> void:
 		global_position = world.Airfield.SPAWN
 		velocity = Vector3.ZERO
 
-	world.get_parent().sync_elf.rpc(position, rotation.y, head.rotation.x, crouched, is_on_floor())
+	_share_pose(world.aboard(global_position), is_on_floor())

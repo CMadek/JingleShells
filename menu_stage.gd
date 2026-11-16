@@ -185,8 +185,8 @@ func _build_set() -> void:
 			var basis := Basis.IDENTITY.scaled(Vector3(radius,height*.55,radius))
 			green_trees.append(Transform3D(basis,pos+Vector3(0,height*(.32+tier*.22),0)))
 			snow_trees.append(Transform3D(basis.scaled(Vector3.ONE*.82),pos+Vector3(0,height*(.32+tier*.22)+height*.08,0)))
-	_tree_batch(green_trees, green)
-	_tree_batch(snow_trees, snow)
+	preload("res://assets/materials/fir_batch.gd").add_tiers(self, green_trees, green)
+	preload("res://assets/materials/fir_batch.gd").add_tiers(self, snow_trees, snow)
 	# Low hangar silhouette and warm distant windows.
 	_box(self, Vector3(-20,3,22), Vector3(18,6,12), wood)
 	_box(self, Vector3(-20,6.1,22), Vector3(19,.3,13), snow)
@@ -218,23 +218,6 @@ func _build_set() -> void:
 		present.rotation.y = spec[1]
 		add_child(present)
 
-func _tree_batch(transforms: Array[Transform3D], material: Material) -> void:
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0
-	cone.bottom_radius = 1
-	cone.height = 1
-	cone.radial_segments = 9
-	var multimesh := MultiMesh.new()
-	multimesh.transform_format = MultiMesh.TRANSFORM_3D
-	multimesh.mesh = cone
-	multimesh.instance_count = transforms.size()
-	for i in transforms.size():
-		multimesh.set_instance_transform(i, transforms[i])
-	var trees := MultiMeshInstance3D.new()
-	trees.multimesh = multimesh
-	trees.material_override = material
-	add_child(trees)
-
 func _crew(pos: Vector3, yaw: float, clip: String, color: Color, offset: float) -> void:
 	var actor: Node3D = CREW.instantiate()
 	actor.position = pos
@@ -242,7 +225,8 @@ func _crew(pos: Vector3, yaw: float, clip: String, color: Color, offset: float) 
 	add_child(actor)
 	actors.append(actor)
 	var expression: String = {"menu_cocoa":"Veteran", "menu_sit":"Smirk", "menu_lean":"Skeptic"}[clip]
-	var blink_targets := preload("res://off_duty_uniform.gd").dress(actor,clip,color,expression)
+	var smoking := clip == "menu_sit"
+	var blink_targets := preload("res://off_duty_uniform.gd").dress(actor,clip,color,expression,smoking)
 	var animation: AnimationPlayer = actor.find_child("AnimationPlayer", true, false)
 	for animation_name in animation.get_animation_list():
 		animation.get_animation(animation_name).loop_mode = Animation.LOOP_LINEAR
@@ -250,27 +234,27 @@ func _crew(pos: Vector3, yaw: float, clip: String, color: Color, offset: float) 
 	animation.advance(offset)
 	animations.append(animation)
 	faces.append({"player":animation, "targets":blink_targets, "offset":offset*.73, "expression":expression})
-	if clip == "menu_cocoa":
+	if clip == "menu_cocoa" or smoking:
 		var skeleton: Skeleton3D = actor.find_children("*", "Skeleton3D", true, false)[0]
 		var attachment := BoneAttachment3D.new()
-		attachment.bone_name = "MugSteam"
+		attachment.bone_name = "SmokeTip" if smoking else "MugSteam"
 		skeleton.add_child(attachment)
-		_steam(attachment)
+		_wisps(attachment,smoking)
 
-func _steam(parent: Node3D) -> void:
+func _wisps(parent: Node3D, smoking: bool) -> void:
 	var steam := CPUParticles3D.new()
-	steam.name = "CocoaSteam"
-	steam.amount = 18
-	steam.lifetime = 2.4
-	steam.preprocess = 2.4
+	steam.name = "CigaretteSmoke" if smoking else "CocoaSteam"
+	steam.amount = 42 if smoking else 18
+	steam.lifetime = 3.6 if smoking else 2.4
+	steam.preprocess = steam.lifetime
 	steam.local_coords = false
 	steam.direction = Vector3(0,1,0)
-	steam.spread = 12
-	steam.initial_velocity_min = .10
-	steam.initial_velocity_max = .16
-	steam.gravity = Vector3(.015,.05,0)
-	steam.scale_amount_min = .045
-	steam.scale_amount_max = .075
+	steam.spread = 7 if smoking else 12
+	steam.initial_velocity_min = .17 if smoking else .10
+	steam.initial_velocity_max = .23 if smoking else .16
+	steam.gravity = Vector3(.045,.025,.016) if smoking else Vector3(.015,.05,0)
+	steam.scale_amount_min = .062 if smoking else .045
+	steam.scale_amount_max = .105 if smoking else .075
 	var scale_curve := Curve.new()
 	scale_curve.add_point(Vector2(0,.15))
 	scale_curve.add_point(Vector2(1,1))
@@ -280,11 +264,13 @@ func _steam(parent: Node3D) -> void:
 	ramp.colors = PackedColorArray([Color(1,1,1,0),Color(1,1,1,.7),Color(1,1,1,.3),Color(1,1,1,0)])
 	steam.color_ramp = ramp
 	var quad := QuadMesh.new()
-	quad.size = Vector2(2,2)
+	quad.size = Vector2(1.35,3.7) if smoking else Vector2(2,2)
 	steam.mesh = quad
 	var material := ShaderMaterial.new()
 	material.shader = SOFT_PARTICLE
-	material.set_shader_parameter("tint",Color(.91,.90,.84,.45))
+	material.set_shader_parameter("tint",Color(.75,.79,.82,.34) if smoking else Color(.91,.90,.84,.45))
+	if smoking:
+		material.set_shader_parameter("curl", .15)
 	steam.material_override = material
 	steam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(steam)

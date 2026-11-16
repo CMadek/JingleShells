@@ -2,8 +2,8 @@
 
 The main menu is live Godot footage: the shipped North Star aircraft and a
 menu-only version of the existing elf crew, lit on a snowy airfield. The right
-elf sips hot cocoa from a cream-and-cranberry mug; the seated elf has a red-and-white
-candy cane and swings their boots in an alternating four-second rhythm. The
+elf sips hot cocoa from a cream-and-cranberry mug. The seated elf smokes a lit
+cigarette and swings their boots in an alternating four-second rhythm. The
 third periodically checks a brass wristwatch. Both wooden crates are plain,
 with no lettering. The existing logo retains its
 transparency and aspect ratio. Menu buttons use evergreen serif text, red hover
@@ -25,11 +25,10 @@ directly on the main page; their existing Steam availability checks remain.
   clears the coat throughout the acting clips. The menu coats disable glossy
   specular highlights, preventing the nearby lantern from washing sleeve folds
   into cream patches. Gameplay materials retain their existing default.
-- `refreshments.py` builds the hooked striped candy cane and an open ceramic mug
-  with a handle, cocoa and marshmallows. The `Mug` bone controls its lift and tilt;
-  the right mitten follows the handle and the near rim meets the lips during
-  each sip. Only the cup emits steam, from its `MugSteam` attachment. Cigarette
-  geometry, embers, ash and mouth-smoke attachments are removed.
+- `refreshments.py` builds the title elf’s cigarette, the lounge elf’s candy cane
+  and the cocoa mug. The `SmokeTip` bone keeps smoke at the ember as the seated elf
+  turns. The `Mug` bone controls the cup’s lift and tilt. The right mitten follows
+  its handle, the near rim meets the lips during each sip, and `MugSteam` follows the cup.
 - `off_duty_crew.blend` is the editable source, with the three actions retained
   in muted NLA tracks. Select an action on `ElfRig` to inspect it.
 - The exported `assets/menu/off_duty_crew.glb` batches meshes by material. Gameplay
@@ -45,7 +44,7 @@ directly on the main page; their existing Steam availability checks remain.
   deformed leg vertices against that crate across 145 samples of the full loop.
 - `menu_stage.gd` stages the real assets, lights, props and bounded particles.
   Crew animation phases are staggered; their poses and motion match at the loop
-  boundary. Snow and cocoa steam emit continuously and fade out, with no scene reset.
+  boundary. Snow, cigarette smoke and cocoa steam emit continuously and fade out.
 
 ## Rendering and lifecycle
 
@@ -55,7 +54,7 @@ survives front-end page changes and is stopped and freed before gameplay starts.
 Returning creates one new stage. Pause menus never create it.
 
 The render target preserves aspect ratio and is capped at 1600×900; the UI stays
-at native resolution. The tree line uses two MultiMeshes; there are 398 particles
+at native resolution. The tree line uses two MultiMeshes. There are 440 particles
 total and two shadow-casting lights. The existing menu music remains independent.
 
 Settings → Animated main menu background switches to the shipped in-engine
@@ -79,7 +78,7 @@ godot --path . res://tests/menu_music_smoke.tscn
 ```
 
 The background test checks exported loop poses and angular continuity, visible
-boot/watch/mug movement, refreshment visibility and the steam attachment,
+boot/watch/mug movement, prop visibility and the smoke and steam attachments,
 expression weights and corrective blinks, plain crates,
 actual mouse/keyboard navigation, render-world isolation, animation preference
 changes, and repeated offline gameplay/return cycles. It does not contact Steam.
