@@ -10,15 +10,18 @@ var tab_sections: Array[VBoxContainer] = []
 var active_tab := 0
 
 const HELP := """THE LAST STOP
-Sit on a couch cushion with {interact}; {jump} gets you up. Grab a practice parcel and hold/release {crew_primary} to aim for the chimney. Face the quartermaster and press {interact} to chat or shop. Buy a wrapped present to carry, or upgrade the whole crew with a throwing mitt or quick sling. Successful gift deliveries earn crew vouchers.
+Sit on a couch cushion with {interact}; {jump} gets you up. Grab a practice parcel and hold/release {crew_primary} to aim for the chimney. Face the quartermaster and press {interact} to chat or shop. Buy a wrapped present to carry, or upgrade the whole crew with a throwing mitt or quick sling. Complete a flight contract to earn crew vouchers.
 
 NAVIGATION
 Take the folded chart from the coffee table with {interact}. Use {crew_primary} to read or fold it, {mark_chart} over the paper to pencil in a shared waypoint, and {show_chart} to offer it to a crewmate. In the cabin, face the board beside the dispatch terminal and press {interact} to pin the chart. Anyone can read it there with {crew_primary} or take it down with {interact}. The runway and departure lounge stay put; each new lobby surveys a different delivery district.
 
-NORTH STAR MK II
-Collect presents and bombs from the rear stores with {interact}. Carry them to the loading end of either return track and press {interact}. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
+FROSTMERE CONTRACT
+Open the chart for the six children on the list. Green orders take gifts. Red orders take coal bombs. Deliver the marked quantities in any order. Liftoff starts an 18-minute weather window. Complete every address and stop on the home runway before closure to bank your pending vouchers. Returning short forfeits the flight’s pay.
 
-With empty hands, aim at any queued item and press {interact} to retrieve it. Reload it at the loading end to move it to the back. Full or cycling tracks keep your held item safe.
+NORTH STAR MK II
+Collect presents and bombs from the rear stores with {interact}. Toss them into either yellow hopper from the stores aisle, or press {interact} at a loading tray. Each track holds five mixed items. Position 1 is NEXT; arrows point toward its enclosed chute.
+
+With empty hands, aim at any queued item and press {interact} to retrieve it. Reload it at the loading end to move it to the back. If the console warns about bank angle, ask the pilot to level out. A jam retains its parcel. Press {interact} at the affected loading end to clear it, or use the other chute.
 
 DELIVERY CONSOLE
 Aim at the port-side console ahead of the tracks and press {interact} with empty hands. Both cargo launchers are controlled here: {launcher_left} selects LEFT, {launcher_right} selects RIGHT, and {launcher_release} releases one item. The green circle and center crosshair predict the selected cargo landing after the 0.45-second release delay, assuming current flight inputs continue. Cargo is never guided. {launcher_leave} leaves the station.
@@ -32,7 +35,7 @@ Flight assist is on at takeoff. Release steering and pitch to level out. Hold {a
 Watch BURNER HEAT on the dash. EASE OFF warns at 75%. Releasing early lets you boost again immediately. At 100%, boost cuts out. Release {afterburner} and let the needle cool to RESET (35%). READY means you can boost again.
 Press {aerobatics} for aerobatics. {move_left}/{move_right} roll the wings and {jump}/{descend} pitch around the wing axis. Bank, then pull to turn. Combine both axes for a barrel roll. Release to keep your attitude, or press {aerobatics} again for assist. Brake while pulling for a tighter turn.
 At 14 m/s or faster, release the flight controls and press {cruise_hold} to level out and hold heading and altitude. Leave the helm with {interact} to work in the cabin. Any flight input or another press of {cruise_hold} returns control to the pilot.
-Presents: nice house +10, precise nice chimney +15 total; naughty house −5. Bombs destroy only the house directly hit and add no score.
+Presents: nice house +10, precise nice chimney +15 total; naughty house −5. Coal bombs pay at listed naughty addresses. Other roofs can be destroyed by a bomb.
 
 WALKING
 {move_forward}/{move_left}/{move_back}/{move_right} move • {jump} jump • {crouch} crouch • {interact} interact

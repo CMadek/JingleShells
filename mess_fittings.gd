@@ -223,7 +223,7 @@ func ellipsoid_on(parent: Node3D,p: Vector3,dims: Vector3,tint: Color) -> MeshIn
 	parent.add_child(node)
 	return node
 
-func dress_prop(body: RigidBody3D,i: int,texture: Texture2D,dims: Vector3) -> void:
+func dress_prop(body: Node3D,i: int,texture: Texture2D,dims: Vector3) -> void:
 	if i == 0:
 		world._box(body,dims,Vector3.ZERO,Color("c4ae83"))
 		var page := MeshInstance3D.new()

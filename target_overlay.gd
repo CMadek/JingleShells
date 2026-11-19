@@ -31,3 +31,20 @@ func _draw() -> void:
 	for axis in [Vector2.RIGHT,Vector2.DOWN]:
 		draw_line(screen-axis*13,screen+axis*13,Color.BLACK,5,true)
 		draw_line(screen-axis*13,screen+axis*13,color,2.5,true)
+	var world = stations.world
+	var roof: Dictionary = world.recipients.identify(hit.get("collider"))
+	if roof.is_empty(): return
+	var stop: int = world.district.stops.find(roof.id)
+	if stop < 0: return
+	var ledger = world.contract
+	var kind: int = ledger.ORDERS[stop]
+	var loadout: Array = world.queues.queues[stations.selected]
+	var matched: bool = not loadout.is_empty() and loadout[0].kind == kind
+	var status := "COAL BOMB" if kind == world.Cargo.Kind.BOMB else "GIFT"
+	if ledger.delivered[stop] >= ledger.REQUIRED[stop]: status = "SIGNED FOR"
+	elif not matched: status = "NEEDS " + status
+	var slip := "%02d  %s  /  %s   %d/%d" % [stop+1,ledger.CHILDREN[stop],status,ledger.delivered[stop],ledger.REQUIRED[stop]]
+	var width := font.get_string_size(slip,HORIZONTAL_ALIGNMENT_LEFT,-1,18).x
+	var where := Vector2(clampf(screen.x-width*.5,8,viewport_size.x-width-8),clampf(screen.y+radius+24,86,viewport_size.y-100))
+	draw_string_outline(font,where,slip,HORIZONTAL_ALIGNMENT_LEFT,-1,18,5,Color.BLACK)
+	draw_string(font,where,slip,HORIZONTAL_ALIGNMENT_LEFT,-1,18,color if matched else Color("#ffcb87"))

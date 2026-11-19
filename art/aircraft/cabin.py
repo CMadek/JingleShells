@@ -164,9 +164,6 @@ for side in (-1,1):
     outline=[(side*1.04,0)]+arc+[(side*1.04,arc[-1][1])]
     loft("Curved hold partition",[[(x,y,z) for x,z in outline] for y in (-7.07,-6.93)],pine)
     box("Passage jamb",(side*1.04,-6.90,1.23),(.10,.12,2.46),gold,.025)
-    for y in (-8,-10):
-        box("Hold lamp shoe",(side*3.55,y,3.55),(.15,.32,.35),pine)
-        rod("Hold lamp",(side*3.35,y,3.45),(side*3.35,y,3.68),.107,warm,16)
 lintel_top=pc+ph*(1-(1.065/pw)**pp)**(1/pp)
 box("Passage lintel",(0,-7,(2.46+lintel_top)/2),(2.13,.14,lintel_top-2.46),pine,.04)
 for side in (-1,1):

@@ -8,8 +8,8 @@ const RED := Color("963d39")
 const TEAL := Color("27675b")
 const BLUE := Color("22568a")
 const PAPER := Color("e5dab5")
-const ROUTE := Rect2(29,91,340,405)
-const VILLAGE := Rect2(390,91,544,405)
+const ROUTE := Rect2(29,91,340,344)
+const VILLAGE := Rect2(390,91,544,344)
 var font: Font = ThemeDB.fallback_font
 var route_bounds := Rect2()
 
@@ -29,6 +29,11 @@ func lettering(p: Vector2, value: String, px := 15, color := INK) -> void:
 func plot(point: Vector3, bounds: Rect2, panel: Rect2) -> Vector2:
 	var scale_factor := minf(panel.size.x / bounds.size.x, panel.size.y / bounds.size.y)
 	return panel.get_center() + (Vector2(point.x,point.z) - bounds.get_center()) * scale_factor
+
+func draw_chart_area(outline: PackedVector2Array, area: Rect2, panel: Rect2, color: Color) -> void:
+	var ink := PackedVector2Array()
+	for point in outline: ink.append(plot(Vector3(point.x,0,point.y),area,panel))
+	draw_colored_polygon(ink,color)
 
 func frame(panel: Rect2) -> void:
 	draw_rect(panel,Color("dfd4b2"))
@@ -59,6 +64,23 @@ func _draw() -> void:
 		var area: Rect2 = pair[0]
 		var panel: Rect2 = pair[1]
 		if panel == ROUTE:
+			var watercourse := PackedVector2Array()
+			for bank in district.valley.river:
+				var point := plot(Vector3(bank.x,0,bank.y),area,panel)
+				if panel.grow(-2).has_point(point): watercourse.append(point)
+			if watercourse.size() >= 2: draw_polyline(watercourse, Color("8fb3c0"), 3, true)
+			for i in range(1,district.valley.rail.size()):
+				var a: Vector2 = district.valley.rail[i-1]
+				var b: Vector2 = district.valley.rail[i]
+				var p := plot(Vector3(a.x,0,a.y),area,panel)
+				var q := plot(Vector3(b.x,0,b.y),area,panel)
+				if panel.has_point(p) and panel.has_point(q): draw_line(p,q,FAINT,1.2,true)
+			for wood in district.woodland.woods:
+				draw_chart_area(wood,area,panel,Color("8fa98e"))
+			draw_chart_area(district.woodland.shore,area,panel,Color("8fb3c0"))
+			var lake: Vector2 = district.woodland.lake_center
+			var mid := plot(Vector3(lake.x,0,lake.y),area,panel)
+			lettering(mid+Vector2(21,4),"Stillwater Lake",12,BLUE)
 			for grove in district.groves:
 				var center := plot(grove,area,panel)
 				if panel.has_point(center):
@@ -67,6 +89,12 @@ func _draw() -> void:
 			var base := plot(world.Airfield.SPAWN,area,panel)
 			draw_rect(Rect2(base-Vector2(3,3),Vector2(6,6)),RED)
 			lettering(base+Vector2(8,0),"LAST STOP",12)
+			for title: String in district.valley.survey:
+				var pin := plot(district.valley.survey[title],area,panel)
+				draw_rect(Rect2(pin-Vector2(2,2),Vector2(4,4)),INK)
+				var left := title == "Trestle Crossing"
+				var offset := -font.get_string_size(title,HORIZONTAL_ALIGNMENT_LEFT,-1,11).x-5 if left else 5.0
+				lettering(pin+Vector2(offset,4),title,11)
 		else:
 			for road in district.roads:
 				var line := PackedVector2Array()
@@ -74,6 +102,7 @@ func _draw() -> void:
 				draw_polyline(line,FAINT,2)
 		for i in world.recipients.houses.size():
 			var house: Dictionary = world.recipients.houses[i]
+			if panel == ROUTE and not district.stops.has(i): continue
 			var p := plot(world.chimneys[i].top,area,panel)
 			if house.destroyed:
 				draw_line(p-Vector2(2,2),p+Vector2(2,2),INK,1)
@@ -83,16 +112,23 @@ func _draw() -> void:
 			else: draw_rect(Rect2(p-Vector2.ONE*2,Vector2.ONE*4),RED)
 		for title in district.landmarks:
 			var p := plot(district.landmarks[title],area,panel)
-			if title == "Frostmere":
+			if title == "Lantern Quay":
 				var shore := PackedVector2Array()
 				for j in 32:
 					var edge := Vector3(cos(TAU*j/32)*32,0,sin(TAU*j/32)*20.8)
-					shore.append(plot(district.landmarks[title]+edge,area,panel))
+					shore.append(plot(district.landmarks[title]+edge.rotated(Vector3.UP,district.bearing),area,panel))
 				draw_colored_polygon(shore,Color("97b7ba"))
 			draw_circle(p,3,BLUE)
-			if panel == VILLAGE: lettering(Vector2(clampf(p.x-25,panel.position.x+2,panel.end.x-68),p.y-7),title,12)
+			if panel == VILLAGE: lettering(Vector2(clampf(p.x-(70 if title == "Lantern Quay" else 25),panel.position.x+2,panel.end.x-83),p.y-7),title,12)
+		if panel == VILLAGE:
+			for i in district.stops.size():
+				var anchor := plot(world.chimneys[district.stops[i]].top,area,panel)
+				var ink := TEAL if district.sites[district.stops[i]].nice else RED
+				if world.contract.delivered[i] == world.contract.REQUIRED[i]: ink = INK
+				draw_circle(anchor,10,ink)
+				lettering(anchor+Vector2(-4,5),str(i+1),14,PAPER)
 		for cargo in world.loose.values():
-			var p := plot(cargo.position,area,panel)
+			var p := plot(cargo.global_position,area,panel)
 			if panel.has_point(p): draw_circle(p,2,Color("ae7526"))
 		for id in world.players:
 			var p := plot(world.players[id].position,area,panel)
@@ -107,8 +143,17 @@ func _draw() -> void:
 			if panel.has_point(mark):
 				if panel.has_point(plane) and plane.distance_to(mark)>12: draw_dashed_line(plane,mark,RED,1.5,5,true)
 				draw_arc(mark,8,-.2,TAU,30,RED,2.5,true)
-	lettering(Vector2(29,524),"▲ Aircraft     ◎ Crew     ● Nice     ○ Delivered     ■ Naughty     × Ruin     • Loose cargo",16)
-	lettering(Vector2(29,557),"%s     /     ALT %d m     /     %d m/s     /     %d CREW" % [world.phase,world.bomber.position.y,world.speed,world.players.size()],17)
+	lettering(Vector2(29,455),"POSTMASTER'S LIST",16)
+	for i in district.stops.size():
+		var x: int = 29 + (i % 3)*303
+		var y := 477 if i < 3 else 522
+		var coal: bool = not district.sites[district.stops[i]].nice
+		var done: bool = world.contract.delivered[i] == world.contract.REQUIRED[i]
+		var ink := INK if done else (RED if coal else TEAL)
+		draw_rect(Rect2(x,y-14,4,33),ink)
+		lettering(Vector2(x+10,y),"%02d  %s  /  %s" % [i+1, world.contract.CHILDREN[i], "SIGNED" if done else ("NAUGHTY" if coal else "NICE")],16,ink)
+		lettering(Vector2(x+10,y+18),"%s   ·   %s %d/%d" % [world.contract.ADDRESSES[i], "Coal" if coal else "Gifts", world.contract.delivered[i], world.contract.REQUIRED[i]],14)
+	lettering(Vector2(29,562),"▲ Aircraft    ◎ Crew    ● Nice    ○ Delivered    ■ Naughty    × Ruin",14)
 	var balance: int = mess.vouchers
 	lettering(Vector2(760,557),"%d  VOUCHERS" % balance,16,RED)
 	if mess.presenting:

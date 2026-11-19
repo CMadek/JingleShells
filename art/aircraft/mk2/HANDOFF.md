@@ -84,7 +84,7 @@ The two-process ENet harness is `tests/mk2_network.tscn`, with `-- --host` and
 `-- --client` on localhost port 28764. Connection did not complete in this execution
 environment; no successful live network validation is claimed.
 
-Before release, test with two Steam accounts on the same build (protocol 22):
+Before release, test with two Steam accounts on the same build (protocol 23):
 
 1. Host and join; load both racks with alternating types. Have both players load
    the fifth position together: only one succeeds and the loser keeps their item.

@@ -201,7 +201,7 @@ func _ready() -> void:
 	assert(elf.cam.current)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	assert(not elf.presentation.model.visible, "Pilot body must hide in cockpit view")
+	assert(elf.presentation.body_meshes[0].cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY, "Cockpit keeps the full-body shadow")
 	world.set_pilot(0)
 	await get_tree().process_frame
 	await get_tree().process_frame

@@ -3,6 +3,9 @@ extends Node3D
 ## The host (peer 1) is authoritative for flight, drops and score.
 
 const Airfield := preload("res://airfield.gd")
+# Horizontal flight envelope (world X/Z), including turning room north of Frostmere.
+const FLIGHT_AREA := Rect2(-2900, -5900, 5800, 8800)
+var ground_area := FLIGHT_AREA.grow(100)
 const Access := preload("res://aircraft_access.gd")
 var access: Node
 var flight_audio: Node3D
@@ -11,14 +14,14 @@ var phase := "PREPARATION"
 const Cargo := preload("res://cargo.gd")
 const Trajectory := preload("res://cargo_trajectory.gd")
 var recipients: Node
+var contract := preload("res://frostmere.gd").new()
+var weather_env: Environment
 var district: Node3D
 var mess: Node3D
-var preview: Node3D
 const PlayerScript := preload("res://player.gd")
 const Instruments := preload("res://assets/aircraft/instruments.gd")
 
 const HELM_POS := Vector3(0, 1.55, -7.0)   # stand here to take the helm
-const HATCH_POS := Vector3(0, 0, 3.0)   # legacy manual-delivery reference; Mk II deck is sealed
 const GRAVITY := 9.8
 const START_ALTITUDE := Airfield.PARK.y
 @export var nice_points := 10
@@ -75,7 +78,6 @@ var score := 0
 var chimneys: Array = []   # {top: Vector3, nice: bool}
 var queues: Node3D
 var stations: Node3D
-var supply_points: Array = []
 const CABIN_BOUNDS := AABB(Vector3(-4.85,-.5,-12.2),Vector3(9.7,7,24.3))
 @export_range(1, 6) var pickup_range := 2.8
 @export_range(0.1, 4) var charge_seconds := 1.2
@@ -121,6 +123,9 @@ var _beam_bad: StandardMaterial3D
 
 
 func _ready() -> void:
+	contract.name = "Frostmere"
+	contract.world = self
+	add_child(contract)
 	recipients = preload("res://house_delivery.gd").new()
 	recipients.world = self
 	add_child(recipients)
@@ -137,9 +142,6 @@ func _ready() -> void:
 	mess.name = "CrewMess"
 	add_child(mess)
 	mess.build(self, depot)
-	preview = preload("res://delivery_preview.gd").new()
-	preview.world = self
-	add_child(preview)
 	if multiplayer.is_server():
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 		add_player(1)
@@ -202,6 +204,7 @@ func _build_environment() -> void:
 	var sky := Sky.new()
 	sky.sky_material = sm
 	var env := Environment.new()
+	weather_env = env
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
@@ -231,14 +234,6 @@ func _build_environment() -> void:
 	moon.directional_shadow_max_distance = 150.0
 	add_child(moon)
 
-	var ground := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(6000, 6000)
-	ground.mesh = pm
-	var snow := ShaderMaterial.new()
-	snow.shader = preload("res://assets/materials/snow.gdshader")
-	ground.material_override = snow
-	add_child(ground)
 	var terrain := StaticBody3D.new()
 	var floor_shape := CollisionShape3D.new()
 	floor_shape.shape = WorldBoundaryShape3D.new()
@@ -266,9 +261,13 @@ func _make_beam_mat(c: Color) -> StandardMaterial3D:
 	return m
 
 
-func _make_house(base: Vector3, col: Color, nice: bool) -> void:
+func _make_house(site: Dictionary, kit: Mesh, listed: bool) -> void:
+	var base: Vector3 = site.base
+	var col: Color = site.color
+	var nice: bool = site.nice
 	var house := StaticBody3D.new()
 	house.position = base
+	house.rotation.y = site.yaw
 	add_child(house)
 	_box(house, Vector3(8, 5, 7), Vector3(0, 2.5, 0), col, false, house)
 
@@ -285,9 +284,11 @@ func _make_house(base: Vector3, col: Color, nice: bool) -> void:
 	house.add_child(chimney_body)
 	_box(chimney_body, Vector3(1.2, 3.5, 1.2), Vector3(2.2, 5.75, 1.0), Color(0.45, 0.2, 0.15), false, chimney_body)
 	recipients.register(house, nice, chimney_body)
-	if nice:
-		_box(house, Vector3(1.5, 1.5, 0.1), Vector3(-1.5, 2.5, 3.55), Color(1.0, 0.85, 0.4), true)
-
+	var facade := MeshInstance3D.new()
+	facade.mesh = kit
+	house.add_child(facade)
+	chimneys.append({"top": house.to_global(Vector3(2.2,7.5,1.0)), "nice":nice})
+	if not listed: return
 	var beam := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = 0.45
@@ -299,15 +300,15 @@ func _make_house(base: Vector3, col: Color, nice: bool) -> void:
 	beam.position = Vector3(2.2, 11.5, 1.0)
 	house.add_child(beam)
 
-	chimneys.append({"top": base + Vector3(2.2, 7.5, 1.0), "nice": nice})
 
-func _hull_box(hull: StaticBody3D, size: Vector3, center: Vector3) -> void:
+func _hull_box(hull: StaticBody3D, size: Vector3, center: Vector3) -> CollisionShape3D:
 	var shape := BoxShape3D.new()
 	shape.size = size
 	var collision := CollisionShape3D.new()
 	collision.shape = shape
 	collision.position = center
 	hull.add_child(collision)
+	return collision
 
 
 func _walkway_wedge(hull: PhysicsBody3D, width: float, start: Vector3, end: Vector3) -> void:
@@ -351,7 +352,7 @@ func _build_bomber() -> void:
 	# Closed access face prevents walking through the hatch; click starts boarding.
 	_hull_box(hull,Vector3(1.5,1.5,.12),Vector3(1.9,.75,-5.64))
 	_hull_box(hull, Vector3(2.49,1.1,.83), Vector3(0,2.10,-8.63))
-	supply_points = preload("res://cargo_shelves.gd").build(self,hull)
+	preload("res://cargo_stores.gd").build(self,hull)
 	# Crew ride in world space. Cargo needs a moving surface with physics velocity.
 	hull.collision_layer = 16
 	if multiplayer.is_server():
@@ -397,7 +398,7 @@ func _build_hud() -> void:
 	view_button.focus_mode = Control.FOCUS_NONE
 	layer.add_child(view_button)
 	view_button.pressed.connect(toggle_pilot_view)
-	hud_score = _hud_label(layer, Vector2(20, 14), 30)
+	hud_score = _hud_label(layer, Vector2(20, 14), 20)
 	hud_info = _hud_label(layer, Vector2(20, 58), 18)
 	hud_msg = _hud_label(layer, Vector2(20, 215), 30)
 	var dot := ColorRect.new()
@@ -442,6 +443,7 @@ func request_players() -> void:
 	queues.snapshot(id)
 	stations.snapshot(id)
 	mess.snapshot(id)
+	contract.publish(id)
 	send_flight_snapshot(0.0, id)
 	for pid in players:
 		crew_posture.rpc_id(id, pid, players[pid].crouched, players[pid].is_on_floor() if pid == 1 else players[pid].net_grounded)
@@ -620,13 +622,16 @@ func _physics_process(delta: float) -> void:
 	if multiplayer.is_server():
 		previous_plane = bomber.transform
 		physics_delta = delta
+		# The rigid bodies just completed the previous tick. Compare them with
+		# that cabin pose before advancing the moving hoppers to the next tick.
+		_step_cargo(delta)
 		_fly(delta)
 		carry_crew(previous_plane)
 		moving_hull.transform = bomber.transform
 		var vertical_speed := (bomber.position.y - previous_plane.origin.y) / delta
 		instruments.update_readings(self, vertical_speed)
 		send_flight_snapshot(vertical_speed)
-		_step_cargo(delta)
+		contract.tick(delta)
 	access.step(delta)
 
 func flight_state() -> Dictionary:
@@ -657,7 +662,7 @@ func forecast_flight(delay: float) -> Dictionary:
 		previous = pose
 		advance_flight(state,step)
 		pose = flight_pose(state)
-		if not pose.origin.is_finite() or absf(pose.origin.x)>2900 or absf(pose.origin.z)>2900: return {}
+		if not inside_flight_area(pose.origin): return {}
 	return {"pose":pose,"previous":previous,"delta":step if ticks else physics_delta}
 
 func _fly(delta: float) -> void:
@@ -721,7 +726,7 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 		state.speed = clampf(state.speed + (MAX_THRUST*state.throttle - DRAG*state.speed*state.speed - (10.0 if returning or state.in_throttle < 0 else 1.0))*delta,0,MAX_SPEED)
 		state.heading -= state.in_steer * .42 * minf(state.speed / 5.0, 1.0) * delta
 		state.position += Vector3(-sin(state.heading),0,-cos(state.heading))*state.speed*delta
-		state.position.y = MIN_ALTITUDE
+		state.position.y = landing_height(state.position)
 		state.phase = "TAXI / TAKEOFF" if state.speed > .1 else "PREPARATION"
 		if not returning and state.in_climb > 0 and state.speed >= 18:
 			state.grounded = false
@@ -753,8 +758,9 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 	if not state.aerobatics or returning: velocity.y -= (1.0 - cos(state.roll)) * 4.0
 	state.position += velocity * delta
 	state.phase = "UNATTENDED / GLIDING DOWN" if returning else "IN FLIGHT"
-	if state.position.y < MIN_ALTITUDE:
-		state.position.y = MIN_ALTITUDE
+	var floor_height := landing_height(state.position)
+	if state.position.y < floor_height:
+		state.position.y = floor_height
 		state.pitch = 0
 		state.roll = 0
 		state.grounded = true
@@ -763,6 +769,9 @@ func advance_flight(state: Dictionary, delta: float) -> void:
 	elif state.position.y > MAX_ALTITUDE:
 		state.position.y = MAX_ALTITUDE
 		if not state.aerobatics: state.pitch = minf(state.pitch, 0.0)
+
+func landing_height(point: Vector3) -> float:
+	return MIN_ALTITUDE + (district.valley.elevation(point.x,point.z) if district else 0.0)
 
 func _steer_aerobatic(state: Dictionary, delta: float, lift: float) -> void:
 	var axes := flight_pose(state).basis
@@ -860,18 +869,14 @@ func sync_bomber(pos: Vector3, h: float, p: float, r: float, s: float, power: fl
 
 
 func aimed_pile(view: Transform3D) -> int:
-	var selected := Cargo.Kind.EMPTY
-	var best_alignment := .32
-	for supply in supply_points:
-		var offset: Vector3 = bomber.to_global(supply.point) - view.origin
-		var along := offset.dot(-view.basis.z)
-		var alignment := (offset + view.basis.z * along).length()
-		if along > 0 and offset.length() <= pickup_range and alignment < best_alignment:
-			var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(view.origin,view.origin+offset,1|16))
-			if hit.is_empty():
-				selected = supply.kind
-				best_alignment = alignment
-	return selected
+	var end := view.origin - view.basis.z * pickup_range
+	var ray := PhysicsRayQueryParameters3D.create(view.origin, end, 1 | 16)
+	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+	if hit.is_empty(): return Cargo.Kind.EMPTY
+	var body: CollisionObject3D = hit.collider
+	var owner := body.shape_owner_get_owner(body.shape_find_owner(hit.shape))
+	return owner.get_meta("stock_kind", Cargo.Kind.EMPTY) if owner else Cargo.Kind.EMPTY
+
 
 
 func aimed_loose(view: Transform3D) -> int:
@@ -896,13 +901,17 @@ func cargo_action(action: String, item_id := 0) -> void:
 	if not players.has(id):
 		return
 	var elf = players[id]
+	var facing: Basis = elf.global_basis
+	if aboard(elf.global_position):
+		facing = crew_frame(bomber.transform).inverse() * facing
+	var yaw := atan2(facing.z.x, facing.z.z)
 	if multiplayer.is_server():
-		_handle_cargo(id, action, elf.rotation.y, elf.pitch, item_id)
+		_handle_cargo(id, action, yaw, elf.pitch, item_id)
 	else:
-		_cargo_rpc.rpc_id(1, action, elf.rotation.y, elf.pitch, item_id)
+		_cargo_rpc.rpc_id(1, action, yaw, elf.pitch, item_id)
 
 
-@rpc("any_peer", "unreliable_ordered")
+@rpc("any_peer", "reliable")
 func _cargo_rpc(action: String, yaw: float, look_pitch: float, item_id: int) -> void:
 	if multiplayer.is_server():
 		_handle_cargo(multiplayer.get_remote_sender_id(), action, yaw, look_pitch, item_id)
@@ -915,7 +924,8 @@ func _handle_cargo(id: int, action: String, yaw: float, look_pitch: float, item_
 	var elf = players[id]
 	var feet: Vector3 = elf.position if id == 1 else elf.net_pos
 	var aim := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(look_pitch, -1.5, 1.5))
-	var view := Transform3D(aim, feet + Vector3.UP * elf.head.position.y)
+	var frame := crew_frame(bomber.transform) if aboard(feet) else Basis.IDENTITY
+	var view := Transform3D(frame * aim, feet + frame.y * elf.head.position.y)
 	if action == "pickup" and elf.held_kind == Cargo.Kind.EMPTY:
 		if item_id != 0:
 			if loose.has(item_id) and aimed_loose(view) == item_id:
@@ -993,6 +1003,8 @@ func _release(id: int, kind: int, view: Transform3D, impulse: float) -> void:
 	show_loose.rpc(item_id, kind, state.pose)
 	var body: RigidBody3D = loose[item_id]
 	body.linear_velocity = state.velocity
+	if impulse > 0 and aboard(players[id].global_position):
+		body.set_meta("throw_local", bomber.to_local(view.origin))
 
 
 @rpc("authority", "call_local", "reliable")
@@ -1035,6 +1047,11 @@ func _step_cargo(delta: float) -> void:
 		var body: Node3D = loose[item_id]
 		var prev: Vector3 = body.get_meta("previous")
 		var pos := body.position
+		if body.has_meta("throw_local"):
+			var local_pos := bomber.to_local(pos)
+			if queues.catch_throw(item_id, body.get_meta("throw_local"), local_pos): continue
+			if aboard(pos): body.set_meta("throw_local", local_pos)
+			else: body.remove_meta("throw_local")
 		var age := 0.0 if aboard(body.position) or at_airfield(body.position) else float(body.get_meta("age")) + delta
 		var hit := Trajectory.sweep(get_world_3d().direct_space_state, Cargo.shape(body.get_meta("kind")), Transform3D(body.basis, prev), pos-prev, 1, [body.get_rid()])
 		if hit.is_empty() and body.has_meta("impact_collider"):
@@ -1064,15 +1081,23 @@ func sync_loose(snapshot: Dictionary, plane_pose: Transform3D) -> void:
 		var pose: Transform3D = snapshot[id]
 		var cabin_pose := inverse_plane * pose
 		# Keep deck cargo aligned with the faster flight updates between snapshots.
-		var in_cabin := AABB(Vector3(-3.5, -0.6, -7.5), Vector3(7, 4, 20)).has_point(cabin_pose.origin)
+		var in_cabin := CABIN_BOUNDS.has_point(cabin_pose.origin)
 		var parent: Node3D = bomber if in_cabin else self
+		var target := cabin_pose if in_cabin else pose
+		var motion: Tween = visual.get_meta("motion") if visual.has_meta("motion") else null
+		if motion: motion.kill()
 		if visual.get_parent() != parent:
-			visual.reparent(parent, false)
-		visual.transform = cabin_pose if in_cabin else pose
+			visual.reparent(parent, true)
+		if visual.position.distance_squared_to(target.origin) > 100:
+			visual.transform = target
+		else:
+			motion = visual.create_tween()
+			motion.tween_property(visual,"transform",target,3.0/Engine.physics_ticks_per_second)
+			visual.set_meta("motion",motion)
 
 
 @rpc("authority", "call_local", "reliable")
-func landing_burst(pos: Vector3, kind: int) -> void:
+func landing_burst(pos: Vector3, kind: int, coal := false) -> void:
 	flight_audio.cargo_impact(pos,kind == Cargo.Kind.BOMB)
 	var burst := Node3D.new()
 	add_child(burst)
@@ -1080,6 +1105,7 @@ func landing_burst(pos: Vector3, kind: int) -> void:
 	burst.position = pos
 	var bomb := kind == Cargo.Kind.BOMB
 	var colors := [Color.ORANGE_RED, Color.GOLD, Color.ORANGE] if bomb else [Color.CRIMSON, Color.GOLD, Color.SEA_GREEN]
+	if coal: colors = [Color("474451"), Color("797785"), Color("bac3c9")]
 	var tween := burst.create_tween().set_parallel(true)
 	for i in 16:
 		var t := float(i) / 15.0
@@ -1120,17 +1146,28 @@ func _resolve_impact(item_id: int, collider: Object, point: Vector3) -> void:
 	if not recipient.is_empty():
 		var house: Dictionary = recipients.houses[recipient.id]
 		if not house.destroyed:
-			if kind == Cargo.Kind.BOMB:
+			var stop: int = district.stops.find(recipient.id)
+			var coal_order: bool = stop >= 0 and contract.ORDERS[stop] == Cargo.Kind.BOMB
+			if kind == Cargo.Kind.BOMB and not coal_order:
 				destroy_house.rpc(recipient.id, point, true)
 				return
-			var amount: int = nice_points + (chimney_bonus if recipient.precision else 0) if house.nice else -naughty_penalty
-			var message := ("Chimney delivery!" if recipient.precision and house.nice else ("Delivered!" if house.nice else "Naughty house!")) + " %+d" % amount
+			var correct: bool = kind == Cargo.Kind.BOMB if coal_order else house.nice
+			var amount := nice_points + (chimney_bonus if recipient.precision else 0) if correct else -naughty_penalty
+			var message := "Coal received!" if kind == Cargo.Kind.BOMB else ("Chimney delivery!" if recipient.precision else "Delivered!")
+			if not correct: message = "Wrong delivery — naughty list"
+			message += "  %+d" % amount
+			if contract.active and stop >= 0 and correct:
+				message = contract.deliver(recipient.id, kind, amount)
+				if message.is_empty():
+					amount = 0
+					message = "Already signed for"
+			elif correct and stop < 0: mark_delivered.rpc(recipient.id)
 			score += amount
-			if amount > 0:
-				mess.earn(amount)
-				mark_delivered.rpc(recipient.id)
 			sync_score.rpc(score, message)
 			delivery_feedback.rpc(point, message)
+			if coal_order and kind == Cargo.Kind.BOMB:
+				landing_burst.rpc(point, kind, true)
+				return
 	landing_burst.rpc(point, kind)
 
 @rpc("authority", "call_local", "reliable")
@@ -1166,7 +1203,7 @@ func flight_status() -> String:
 	return ""
 
 func _process(delta: float) -> void:
-	hud_score.text = "Score: %d" % score
+	hud_score.text = contract.briefing()
 	var me := multiplayer.get_unique_id()
 	var status := flight_status()
 	var txt := "%s | Speed %d m/s | Throttle %d%% | Altitude %d m\n" % [phase,speed,throttle*100,bomber.position.y]
@@ -1194,11 +1231,13 @@ func _process(delta: float) -> void:
 				txt += "   Charge: %d%%" % roundi(100 * clampf(elapsed / charge_seconds, 0, 1))
 		elif elf and aimed_loose(elf.head.global_transform) != 0:
 			txt += "{interact} to pick up dropped cargo"
-		elif elf and aimed_pile(elf.head.global_transform) != Cargo.Kind.EMPTY:
-			txt += "{interact} to pick up " + ("a present" if aimed_pile(elf.head.global_transform) == Cargo.Kind.PRESENT else "a bomb")
 		else:
-			txt += "{move_forward}/{move_left}/{move_back}/{move_right} walk, {jump} jump, {interact} at the helm to fly"
-	txt += "\nGreen chimney = nice, red chimney = naughty. {crouch} crouches. {flight_menu} opens the menu."
+			var stock := aimed_pile(elf.head.global_transform) if elf else Cargo.Kind.EMPTY
+			if stock != Cargo.Kind.EMPTY:
+				txt += "{interact} to pick up " + ("a present" if stock == Cargo.Kind.PRESENT else "a bomb")
+			else:
+				txt += "{move_forward}/{move_left}/{move_back}/{move_right} walk, {jump} jump, {interact} at the helm to fly"
+	txt += "\nGreen list beacon: gifts. Red list beacon: coal bombs. {crouch} crouches. {flight_menu} opens the menu."
 	var local_elf = players.get(me)
 	if local_elf:
 		var queue_prompt: String = queues.prompt(me)
@@ -1252,13 +1291,19 @@ func carry_crew(old: Transform3D) -> void:
 				elf.net_pos = bomber.global_transform*(old.affine_inverse()*elf.net_pos)
 				elf.net_yaw = wrapf(elf.net_yaw + yaw_delta, -PI, PI)
 
+func inside_flight_area(point: Vector3) -> bool:
+	return point.is_finite() and FLIGHT_AREA.has_point(Vector2(point.x, point.z))
+
 func recover_outside_world() -> void:
-	if not bomber.position.is_finite() or absf(bomber.position.x) > 2900 or absf(bomber.position.z) > 2900:
+	if not inside_flight_area(bomber.position):
 		begin_level()
 
 func begin_level() -> void:
 	if not multiplayer.is_server():
 		return
+	if contract.active:
+		contract.settle(false, "Aircraft recalled")
+	restore_stops.rpc()
 	stations.reset()
 	mess.reset_room()
 	queues.reset()
@@ -1286,6 +1331,11 @@ func begin_level() -> void:
 	access.set_state.rpc("door",true,1.0)
 	access.set_state.rpc("hatch",false,0.0)
 	reset_crew.rpc()
+
+@rpc("authority","call_local","reliable")
+func restore_stops() -> void:
+	if district:
+		for id in district.stops: recipients.restore(id)
 
 @rpc("authority", "call_local", "reliable")
 func reset_crew() -> void:

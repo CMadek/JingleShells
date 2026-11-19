@@ -16,6 +16,11 @@ var action_time := 0.0
 var phase := 0.0
 var last_position := Vector3.ZERO
 var moving := false
+var movement_speed := 0.0
+var last_on_deck := false
+var stride := 0.0
+var body_meshes: Array[Node] = []
+var first_person_body := false
 var was_grounded := true
 var charge_pose := false
 @export var carry_offset := Vector3(0, -.28, -.65)
@@ -41,10 +46,14 @@ func setup(player: CharacterBody3D) -> void:
 			animation.get_animation(name).loop_mode = Animation.LOOP_LINEAR if name not in ["pickup", "throw", "drop", "land"] else Animation.LOOP_NONE
 	socket = Node3D.new()
 	if actor.is_multiplayer_authority():
-		actor.head.add_child(socket)
-		socket.position = carry_offset
 		hands = ARMS.instantiate()
 		actor.head.add_child(hands)
+		hands.position = hand_offset
+		hands.add_child(socket)
+		socket.position = carry_offset
+		body_meshes = model.find_children("*", "MeshInstance3D", true, false)
+		for mesh in hands.find_children("*", "MeshInstance3D", true, false):
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	else:
 		var skeleton: Skeleton3D = model.find_children("*", "Skeleton3D", true, false)[0]
 		var attachment := BoneAttachment3D.new()
@@ -54,7 +63,8 @@ func setup(player: CharacterBody3D) -> void:
 	apply_palette(model)
 	if hands:
 		apply_palette(hands, true)
-	last_position = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position)
+	last_on_deck = actor.world.aboard(actor.global_position)
+	last_position = actor.world.bomber.to_local(actor.global_position) if last_on_deck else actor.global_position
 
 func apply_palette(node: Node, first_person := false) -> void:
 	if node is MeshInstance3D:
@@ -78,13 +88,21 @@ func trigger(next: String) -> void:
 	action = next if next in ["pickup", "throw", "drop", "land"] else ""
 	action_time = .38 if action != "" else 0.0
 
+func _physics_process(delta: float) -> void:
+	if not actor: return
+	var deck: bool = actor.world.aboard(actor.global_position)
+	var point: Vector3 = actor.world.bomber.to_local(actor.global_position) if deck else actor.global_position
+	var distance := Vector2(point.x-last_position.x,point.z-last_position.z).length()
+	var measured := distance / delta if deck == last_on_deck and distance < 1.0 else 0.0
+	movement_speed = lerpf(movement_speed, measured, 1.0-exp(-14.0*delta))
+	moving = movement_speed > .24
+	last_on_deck = deck
+	last_position = point
+
 func _process(delta: float) -> void:
 	if not actor:
 		return
 	phase += delta
-	var movement_speed: float = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position).distance_to(last_position) / maxf(delta, .001)
-	moving = movement_speed > .3
-	last_position = (actor.world.bomber.to_local(actor.global_position) if actor.world.aboard(actor.global_position) else actor.global_position)
 	var local := actor.is_multiplayer_authority()
 	var pilot: bool = actor.world.pilot_id == actor.peer_id or actor.world.stations.station_for(actor.peer_id) != ""
 	var grounded: bool = actor.is_on_floor() if local else actor.net_grounded
@@ -95,7 +113,7 @@ func _process(delta: float) -> void:
 	if local and Game.menu_open:
 		charge_pose = false
 		action_time = 0
-	var carrying: bool = actor.held_kind != 0
+	var carrying: bool = actor.held_kind != 0 or actor.world.mess.held(actor.peer_id) >= 0
 	if is_instance_valid(actor.held_model):
 		actor.held_model.visible = not pilot
 	var next := "idle"
@@ -122,11 +140,17 @@ func _process(delta: float) -> void:
 		current = next
 	if animation:
 		animation.speed_scale = clampf(movement_speed / (actor.crouch_speed if actor.crouched else actor.WALK_SPEED), .4, 1.6) if "walk" in next else 1.0
-	model.visible = not local or (actor.cam != actor.get_viewport().get_camera_3d() and actor.world.stations.station_for(actor.peer_id) != "turret")
 	if hands:
-		hands.visible = not model.visible and not pilot
+		var first_person: bool = actor.cam == actor.get_viewport().get_camera_3d() or actor.world.stations.station_for(actor.peer_id) == "turret"
+		if first_person != first_person_body:
+			first_person_body = first_person
+			for mesh in body_meshes:
+				mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if first_person else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		hands.visible = first_person and not pilot
 		var lift := .0 if carrying else -.20
 		var reach := -.12 * sin((action_time / .38) * PI) if action_time > 0 else 0.0
 		var target := hand_offset + Vector3(0, lift + sin(phase * 2) * .004, reach + (.12 if charge_pose else 0.0))
+		stride = fmod(stride + minf(movement_speed,actor.WALK_SPEED)*delta*2.8,TAU)
+		var swing := clampf(movement_speed / actor.WALK_SPEED,0,1) if grounded else 0.0
+		target += Vector3(sin(stride)*.025, -cos(2*stride)*.018, 0) * swing
 		hands.position = hands.position.lerp(target, 1.0 - exp(-14 * delta))
-		socket.position = carry_offset + hands.position
