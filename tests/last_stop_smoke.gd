@@ -48,6 +48,24 @@ func _ready() -> void:
 	copy.generate(w.district.route_seed)
 	check(copy.sites == w.district.sites and copy.roads == w.district.roads,"Identical seed reproduces house and road positions")
 	check(not copy.groves.is_empty() and copy.groves == w.district.groves, "Chart and clients share the approach groves")
+	check(copy.woodland.shore == w.district.woodland.shore and copy.woodland.woods == w.district.woodland.woods, "Seed reproduces the charted shoreline and forests")
+	check(copy.valley.survey == w.district.valley.survey and copy.valley.river == w.district.valley.river and copy.valley.rail == w.district.valley.rail, "The same seed charts the same river, rail and outposts")
+	var bench := Vector3(2217,0,-811)
+	var ray := PhysicsRayQueryParameters3D.create(bench+Vector3.UP*1200,bench,1)
+	var hit: Dictionary = w.get_world_3d().direct_space_state.intersect_ray(ray)
+	check(not hit.is_empty() and hit.position.y > 80 and absf(hit.position.y+w.MIN_ALTITUDE-w.landing_height(bench)) < .05, "Flight clearance matches the physical mountainside")
+	check(is_equal_approx(w.landing_height(w.Airfield.PARK),w.MIN_ALTITUDE), "Runway remains level")
+	var snow: MultiMesh = w.contract.snowfall.multimesh
+	var parked := snow.visible_instance_count
+	w.contract.active = true
+	w.contract.refresh()
+	var departing := snow.visible_instance_count
+	w.contract.seconds = 300
+	w.contract.refresh()
+	check(parked > 0 and parked < departing and departing < snow.visible_instance_count,"Flakes are visible before liftoff and intensify through the run")
+	w.contract.active = false
+	w.contract.seconds = w.contract.WINDOW
+	w.contract.refresh()
 	var other := preload("res://delivery_district.gd").new()
 	other.generate(w.district.route_seed+1)
 	check(other.sites != copy.sites,"Another seed produces a different district")
@@ -82,7 +100,16 @@ func _ready() -> void:
 	press(elf,"crew_primary")
 	for i in 8: await get_tree().physics_frame
 	check(room.sheet.visible,"Reading unfolds the chart")
-	var house: Vector3 = w.chimneys[0].top
+	var lake: Vector2 = w.district.woodland.lake_center
+	var lake_px: Vector2 = room.chart.plot(Vector3(lake.x,0,lake.y),room.chart.route_bounds,room.chart.ROUTE)
+	var lake_pin: Vector3 = room.chart.position_on_chart(lake_px)
+	check(lake.distance_to(Vector2(lake_pin.x,lake_pin.z)) < .02, "Halfway lake is markable on the outbound chart")
+	# The northernmost order exercises the entire chart, including remote pencil validation.
+	var house: Vector3 = w.chimneys[w.district.stops[0]].top
+	for stop in w.district.stops:
+		var roof: Vector3 = w.chimneys[stop].top
+		if roof.z < house.z: house = roof
+	check(w.Airfield.PARK.z - house.z > 4500 and w.inside_flight_area(house), "Distant delivery roofs stay inside the playable route")
 	var px: Vector2 = room.chart.plot(house,w.district.bounds,room.chart.VILLAGE)
 	var pin: Vector3 = room.chart.position_on_chart(px)
 	check(Vector2(pin.x,pin.z).distance_to(Vector2(house.x,house.z)) < .01,"Ink on the village inset maps back to the chimney in world metres")

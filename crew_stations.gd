@@ -287,7 +287,7 @@ func _physics_process(delta: float) -> void:
 	for rack in 2:
 		var line := "PORT" if rack == 0 else "STBD"
 		var count: int = world.queues.queues[rack].size()
-		readout += "\n%s    %s" % [line, "CYCLING" if world.queues.remaining[rack] > 0 else "%d / 5" % count]
+		readout += "\n%s    %s" % [line, "JAMMED" if world.queues.jammed == rack else ("CYCLING" if world.queues.remaining[rack] > 0 else "%d / 5" % count)]
 	readout += "\n\n" + ("LINK ACTIVE" if occupants.delivery else "SYSTEM READY")
 	if terminal_text.text != readout: terminal_text.text = readout
 	hatch_time = maxf(0,hatch_time-delta)
@@ -327,7 +327,10 @@ func _physics_process(delta: float) -> void:
 			for item in world.queues.queues[rack]: names.append("PRESENT" if item.kind == 1 else "BOMB")
 			text.text += ("> " if rack == selected else "  ")+("L" if rack == 0 else "R")+" [%s] • %d free" % [" → ".join(names) if names.size() else "EMPTY",5-names.size()]
 			text.text += " • NEXT: "+(names[0] if names.size() else "—")
-			text.text += " • BUSY\n" if world.queues.remaining[rack] > 0 else "\n"
+			if world.queues.jammed == rack: text.text += " • JAMMED — clear at loading end"
+			elif world.queues.jam_risk(): text.text += " • LEVEL WINGS BEFORE RELEASE"
+			elif world.queues.remaining[rack] > 0: text.text += " • BUSY"
+			text.text += "\n"
 	# Refresh the selected impact every physics tick; the sight must not lag Space.
 	for rack in 2:
 		circles[rack].hide()
@@ -353,7 +356,8 @@ func predict(state: Dictionary, kind: int) -> Dictionary:
 	var path := PackedVector3Array([pose.origin])
 	var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity",9.8))
 	var step := 1.0/Engine.physics_ticks_per_second
-	var excluded: Array[RID] = state.get("excluded",[])
+	var excluded: Array[RID] = []
+	if state.has("excluded"): excluded = state.excluded
 	for i in ceili(24/step):
 		velocity += Vector3.DOWN*gravity*step
 		var motion := velocity*step

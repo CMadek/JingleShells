@@ -14,17 +14,25 @@ Developed with Godot 4.7.2. Multiplayer requires GodotSteam and SteamMultiplayer
 4. Friends choose **Play → Join Game**, paste the lobby ID, and select Join, or accept a Steam friend invite while at the menu.
 5. Use separate Steam accounts on two machines for multiplayer testing. The former IP/UDP-port workflow is no longer used.
 
-The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-22`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
+The development Steam app ID is 480. Both players need the same protocol version (`jingle-bells-28`). Connecting can be canceled and times out after 20 seconds. Steam lobby requests cannot be canceled at the API level: a new attempt waits for the previous request's callback so a late result cannot start the wrong session. If Steam never returns that callback, restart the game/Steam before retrying.
 
 For a solo flight trial, open `tests/flight_practice.tscn` and press **F6**. You start at the runway helm with a present in each launcher and the flight chart pinned next to the delivery terminal. This scene runs the lobby flight model offline.
 
+## Frostmere contract
+
+Read the six named orders on the flight chart. Elsie, Ada, Milo and Otto receive eight gifts between them. Pip and Nell receive four coal bombs. The numbered roofs and their lamps match the list. Navigate by the boats at Lantern Quay, the clock tower at Bell Square and the stacks at the Saw Works. Fly them in any order. Cruise hold lets a two-person crew share navigation, loading and release.
+
+Frostmere is 4.6–5.0 km north of the parked aircraft. East Fold Farm marks departure. The western freight line crosses a frozen river at Trestle Crossing, two pine forests flank Stillwater Lake halfway out, and North Tank marks the eastern approach to town. The flight chart shows these landmarks in their generated positions. At 40 m/s, allow about two minutes each way. Snow falls at the depot and through the flight. Liftoff starts an 18-minute weather window, with driving snow and fog thickening before the runway closes. Each correct item earns 10 pending vouchers, or 15 for a chimney hit. Complete the manifest and stop on the home runway to bank the flight. An incomplete return, lost address, aircraft recall or weather closure forfeits its pay.
+
+After the first completed stop, releasing in a bank of 22 degrees or more can jam that chute. The operator sees a bank warning. Press Interact at its loading end to free the parcel. The opposite chute stays available.
+
 ## Airfield preparation and takeoff
 
-Each lobby starts at The Last Stop, a fixed departure lounge beside the runway. Sit on a couch cushion, pick up the flight chart, or toss mugs, cushions and practice parcels. A parcel through the practice chimney rings the bell, rolls back down the chute and records the crew’s longest basket. Talk to the quartermaster to hear a story or see what’s for sale. The clerk can hand you a wrapped present for delivery or issue the whole crew a throwing mitt or quick sling. The mitt increases throw speed and the sling shortens charge time. The crew starts with 12 shared vouchers and earns more from successful gift deliveries. Upgrades and records last for the lobby.
+Each lobby starts at The Last Stop, a fixed departure lounge beside the runway. Sit on a couch cushion, pick up the flight chart, or toss mugs, cushions and practice parcels. A parcel through the practice chimney rings the bell, rolls back down the chute and records the crew’s longest basket. Talk to the quartermaster to hear a story or see what’s for sale. The clerk can hand you a wrapped present for delivery or issue the whole crew a throwing mitt or quick sling. The mitt increases throw speed and the sling shortens charge time. The crew starts with 12 shared vouchers and banks flight earnings after completing a contract and returning to the runway. Upgrades and records last for the lobby.
 
 The host chooses a fresh seed for the first delivery district. Roads, house locations, nice/naughty assignments, Frostmere and the relay light all derive from it. Late joiners reconstruct that district before receiving its delivery history. Resetting the aircraft keeps the district. The chart on the coffee table renders from the placed world objects, including live aircraft heading, crew, loose cargo and delivered or destroyed houses. Read it with your primary action, mark it with the chart-mark action, offer it for handoff or set it down. All shortcuts appear in Settings → Controls.
 
-Follow the exit signs and board the North Star. A wide passage through the former rear bulkhead leads to a windowless cargo room. Six bombs sit on a low rack on the left and six presents on a low rack on the right, leaving the centre clear.
+Follow the exit signs and board the North Star. A wide passage through the former rear bulkhead leads to a windowless cargo room. Facing aft, bombs sit on the left pallet and wrapped presents on the right. A marked aisle runs between them.
 
 Aim at the boarding door or its brass switch and press E from either side. The curved boarding door closes flush with the outside fuselage and swings outward, clear of the stairs. Mk II replaces the open delivery hatch with guarded dual chutes and a continuous cabin floor. Boarding stairs stay at the airfield when the aircraft departs; there is no attached ramp. Occupancy checks refuse or reverse closure when players/cargo block the opening; collision gates stay stationary during the visual sweep. Flight, cargo, and panel targets are host-controlled, including late-join snapshots. Fitted shell and floor collision lets crew walk up to the visible interior walls and remain aboard near them.
 
@@ -44,7 +52,7 @@ If everyone leaves a moving aircraft for three seconds, the host cancels cruise 
 
 World.begin_level() is the host hook for future mission progression: it clears cargo and resets the aircraft and crew to preparation. It is not connected to an automatic next-mission trigger. Joining players start in the depot.
 
-Run tests/airfield_smoke.tscn with Godot for onboard present/bomb pickup, actual walking/boarding, cargo unloading, ground/aboard movement, received flight poses, split-hatch motion, cargo passing through the opening, occupancy/snapshots, E-operated door closure while taxiing, helm interaction, takeoff with the door open, stationary boarding stairs and walkable cockpit steps, original cabin aisle clearance, individual shelf pickup and cargo support, landing, braking, instruments, and level reset. With --rendering-method gl_compatibility it saves airfield, boarding, and shop previews under .test-data; --headless runs assertions only. Existing menu and elf smoke scenes cover camera/menu integration, belly-station access, crouching, and models. Two-account Steam testing remains required, particularly late joining during a hatch animation and loading/flying/landing together.
+Run tests/airfield_smoke.tscn with Godot for onboard present/bomb pickup, actual walking/boarding, cargo unloading, ground/aboard movement, received flight poses, split-hatch motion, cargo passing through the opening, occupancy/snapshots, E-operated door closure while taxiing, helm interaction, takeoff with the door open, stationary boarding stairs and walkable cockpit steps, original cabin aisle clearance, supply pile pickup and cargo support, landing, braking, instruments, and level reset. With --rendering-method gl_compatibility it saves airfield, boarding, and shop previews under .test-data; --headless runs assertions only. Existing menu and elf smoke scenes cover camera/menu integration, belly-station access, crouching, and models. Two-account Steam testing remains required, particularly late joining during a hatch animation and loading/flying/landing together.
 
 The editable North Star build now runs art/aircraft/access.py before export to cut the actual boarding doorway. Regenerate with Blender --background --python art/aircraft/build.py.
 
@@ -93,12 +101,12 @@ Settings → Controls lets you select an action and press a physical key or mous
 
 ## Cargo
 
-The two labeled shelving units aboard the aircraft have unlimited supplies. Aim at an individual present or bomb on any shelf until the pickup prompt appears. Shelf boards and dividers have player and cargo collision.
+The square aft storeroom has unlimited presents and bombs on separate marked pallets. Aim at stock within reach and press Interact to take one. The stockpiles support loose cargo, and the center aisle leads directly to the chute loaders.
 Aim at dropped cargo and press E to pick it up again. Bombs burst on contact with the ground or a roof, and presents scatter confetti. Both disappear on impact outside the airfield; items dropped on the loading apron remain recoverable. Whole-house deliveries score; chimney hits earn a precision bonus.
 Each elf can carry one item, visible to the crew. A quick click gives it a short toss. The charge
 indicator reaches full strength after 1.2 seconds. Use G at the gold rim with your crosshair aimed
 into the opening for a drop that keeps the plane’s motion. Loose presents slide and tumble, and
-round bombs can roll when the pilot banks. Nice-house impacts score +10, nice chimney impacts +15, and naughty-house impacts -5. Bombs destroy the house directly hit without changing the score.
+round bombs can roll when the pilot banks. Nice-house impacts score +10, nice chimney impacts +15, and naughty-house impacts -5. A coal bomb counts toward a listed naughty order and leaves its roof intact. Other houses can be destroyed.
 
 The host controls inventory, loose cargo, and deliveries. Joining players receive the current items.
 A departing elf takes their held item with them. Loose items outside the cabin and airfield expire after 90 seconds or when far
@@ -144,11 +152,10 @@ Numeric options use sliders with editable number fields on the right. Either inp
 
 ## House deliveries and destruction
 
-Hit a nice house with a present to deliver it. Aim for the chimney for a bonus. Bombs destroy the houses they hit. Manual throws and drops still inherit aircraft momentum; there is no targeting assistance or homing. Each present scores at most once, and intact houses remain eligible for repeated deliveries.
+Hit a nice house with a present to deliver it. Aim for the chimney for a bonus. Listed naughty roofs accept coal bombs. Other houses can be destroyed by a bomb. Manual throws and drops still inherit aircraft momentum; there is no targeting assistance or homing. Each present scores at most once, and intact houses remain eligible for repeated deliveries.
 
-Near the hatch (3.2 m), holding a present shows a landing estimate: G drop by default, or charged throw while holding the mouse button. The estimate uses the same initial cargo release state and sweeps the present shape through gravity in 0.08-second steps, up to 20 seconds ahead, refreshed every 0.10 seconds. It distinguishes nice houses, naughty houses, and ground/obstacles. It does not model subsequent bouncing, moving-aircraft collisions after release, or all rotational contact differences. A blocked release or trajectory beyond the prediction horizon produces no marker.
 
-Tuning: `nice_points = 10`, `naughty_penalty = 5`, `chimney_bonus = 5` on World. Preview interval, step, and horizon are exposed on `delivery_preview.gd`. Destruction leaves collidable ruins, disables the original house/roof/chimney colliders and hides the beacon. Only the struck house is destroyed; debris is cosmetic and expires after two seconds, with a 24-effect cap. Destruction persists for the current world, including aircraft recovery resets. Loading a new world restores the village.
+Tuning: `nice_points = 10`, `naughty_penalty = 5`, `chimney_bonus = 5` on World. Destruction leaves collidable ruins, disables the original house/roof/chimney colliders and hides the beacon. Only the struck house is destroyed; debris is cosmetic and expires after two seconds, with a 24-effect cap. Destruction persists for the current world, including aircraft recovery resets. Loading a new world restores the village.
 
 House identity, recipient state and effects live in `house_delivery.gd`; shape sweeps live in `cargo_trajectory.gd`. The host resolves hits and sends reliable score/destruction events; late joiners receive destroyed-house snapshots without replaying explosions. Protocol `jingle-bells-7` requires matching builds.
 
@@ -156,7 +163,7 @@ Validation: run `godot --path . --rendering-method gl_compatibility res://tests/
 
 ## North Star Mk II crew stations
 
-Two roller tracks feed outboard chutes just forward of the rear stores. Load held cargo at the forward trays with **Interact** (default **E**). With empty hands, aim at a queued item and use **Interact** to retrieve it. Each track holds five items. The first item is marked **1 • NEXT** beside the shutter.
+Two roller tracks feed outboard chutes just forward of the rear stores. Throw a present or bomb through either yellow hopper facing the stores to load it. A miss stays loose, and a full, jammed or cycling hopper rejects the toss. You can also load held cargo at the forward trays with **Interact** (default **E**). With empty hands, aim at a queued item and use **Interact** to retrieve it. Each track holds five items. The first item is marked **1 • NEXT** beside the shutter.
 
 Bring the flight chart from the lounge and use **Interact** on the corkboard beside the port-side terminal to pin it. The whole crew can follow the live chart. Use the primary action to read it, the chart-mark action to pencil in a waypoint, or **Interact** with empty hands to take it down.
 
@@ -187,7 +194,7 @@ Targeting uses the actual chute release point (0.45 seconds into its 0.8-second 
 
 ## Christmas art polish
 
-The North Star and flight crew share cranberry, spruce, warm cream and aged brass finishes. The cabin has a fitted wool headliner, padded wall panels, embroidered carpet, leather handrails and framed cockpit panels. Cargo shelves are authored in Blender at their existing pickup coordinates. Warm shadowed spotlights and soft fill lights complement the cold outdoor light; glass remains clear for targeting.
+The North Star and flight crew share cranberry, spruce, warm cream and aged brass finishes. The cabin has a fitted wool headliner, padded wall panels, embroidered carpet, leather handrails and framed cockpit panels. The aft storeroom has fir decking, padded wall panels, caged lamps and brass cargo placards. Warm shadowed spotlights and soft fill lights complement the cold outdoor light; glass remains clear for targeting.
 
 The elves have sculpted faces, inset eyes, curved ears, goggles, tailored coats, knitted accessories, stitched mittens and rounded boots. Their existing bones, 15 animation clips, carry socket, three coat colors and first-person hands remain supported. Export batches each body into 13 material meshes. Walking crew now receive the aircraft's translation and yaw without accumulating its pitch/roll. Turret operators retain their seat's gimbal orientation.
 

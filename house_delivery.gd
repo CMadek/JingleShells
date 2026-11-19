@@ -34,6 +34,7 @@ func destroy(id: int, impact: Vector3, animate: bool) -> void:
 	root.hide()
 	disable_collisions(root)
 	var ruins := StaticBody3D.new()
+	house.ruins = ruins
 	world.add_child(ruins)
 	ruins.position = house.base
 	world._box(ruins, Vector3(7.8,.45,6.8), Vector3(0,.225,0), Color("494348"), false, ruins)
@@ -64,6 +65,18 @@ func destroy(id: int, impact: Vector3, animate: bool) -> void:
 			tween.tween_property(piece,"rotation",Vector3(i,2*i,i),1.5)
 			tween.tween_property(piece,"scale",Vector3.ONE*.01,.5).set_delay(1.5)
 		tween.chain().tween_callback(burst.queue_free)
+
+func restore(id: int) -> void:
+	var house: Dictionary = houses[id]
+	house.delivered = false
+	if not house.destroyed: return
+	house.destroyed = false
+	house.ruins.queue_free()
+	house.erase("ruins")
+	house.root.show()
+	for body in [house.root] + house.root.find_children("*", "StaticBody3D", true, false):
+		body.collision_layer = 1
+		body.collision_mask = 1
 
 func track_effect(node: Node3D) -> void:
 	effects = effects.filter(func(item): return is_instance_valid(item))

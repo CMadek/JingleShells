@@ -41,28 +41,28 @@ func _ready() -> void:
 		check(w.bomber.to_local(elf.global_position).distance_to(local_wall)<.01,"Crew at the wall moves with the aircraft")
 		w.bomber.transform = wall_pose
 		w.moving_hull.transform = wall_pose
-	check(w.supply_points.size() == 12,"Six supplies on each low rear rack")
-	var shelf_interact := InputEventAction.new()
-	shelf_interact.action = "interact"
-	shelf_interact.pressed = true
-	for supply in w.supply_points:
-		elf.global_position = w.bomber.to_global(Vector3(signf(supply.point.x)*.8,.05,supply.point.z))
-		var direction: Vector3 = (w.bomber.to_global(supply.point)-elf.head.global_position).normalized()
-		var yaw := atan2(-direction.x,-direction.z)
-		var look_pitch := asin(direction.y)
-		elf.rotation.y = yaw
-		elf.pitch = look_pitch
-		elf.head.rotation = Vector3(look_pitch,0,0)
-		elf._unhandled_input(shelf_interact)
-		check(elf.held_kind == supply.kind,"Individual shelf item is collectible: " + str(supply.point))
-		w.set_held(1,0)
-	var outside: Vector3 = w.bomber.to_global(Vector3(5.5,1.4,8.65))
-	var through_wall := Transform3D(Basis.IDENTITY,outside).looking_at(w.bomber.to_global(Vector3(2.42,1.235,8.65)))
-	check(w.aimed_pile(through_wall) == 0,"Cannot collect shelf supplies through fuselage")
+	var interact := InputEventAction.new()
+	interact.action = "interact"
+	interact.pressed = true
+	for side in [-1, 1]:
+		var kind: int = w.Cargo.Kind.BOMB if side == 1 else w.Cargo.Kind.PRESENT
+		for z in [8.18, 9.26, 10.81]:
+			var target := Vector3(side * 1.48, .44, z)
+			elf.global_position = w.bomber.to_global(Vector3(side * .48, .05, z))
+			var direction: Vector3 = (w.bomber.to_global(target) - elf.head.global_position).normalized()
+			elf.rotation.y = atan2(-direction.x, -direction.z)
+			elf.pitch = asin(direction.y)
+			elf.head.rotation = Vector3(elf.pitch, 0, 0)
+			elf._unhandled_input(interact)
+			check(elf.held_kind == kind, "Collect the aimed stock from the aisle at " + str(target))
+			w.set_held(1, 0)
+	var outside: Vector3 = w.bomber.to_global(Vector3(2.93,1.25,9.26))
+	var through_wall := Transform3D(Basis.IDENTITY,outside).looking_at(w.bomber.to_global(Vector3(1.48,.44,9.26)))
+	check(w.aimed_pile(through_wall) == 0,"Bulkhead blocks stock pickup from within reach")
 	var space := get_viewport().world_3d.direct_space_state
 	var side_hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(
-		w.bomber.to_global(Vector3(1.5,1.3,11)),w.bomber.to_global(Vector3(6,1.3,11)),16))
-	check(not side_hit.is_empty() and w.bomber.to_local(side_hit.position).x > 3.6, "A continuous fitted sidewall seals the former aft exit")
+		w.bomber.to_global(Vector3(1.5,1.3,11.4)),w.bomber.to_global(Vector3(6,1.3,11.4)),16))
+	check(not side_hit.is_empty() and absf(w.bomber.to_local(side_hit.position).x - 2.425) < .03, "A continuous fitted sidewall seals the former aft exit")
 	for point in [Vector3(0,3,0), Vector3(.7,3,-4), Vector3(0,3.45,-7), Vector3(1.7,3,9.5)]:
 		var start: Vector3 = w.bomber.to_global(point)
 		var ceiling := space.intersect_ray(PhysicsRayQueryParameters3D.create(start,start+Vector3.UP*3.5,16))
@@ -112,7 +112,7 @@ func _ready() -> void:
 			await get_tree().physics_frame
 		check(Vector2(elf.position.x-target.x,elf.position.z-target.z).length() < .4,"Walkable loading route: " + str(target))
 	check(w.aboard(elf.global_position),"Board through North Star doorway")
-	# The POC's original open aisle runs between the shelves and the rear deck.
+	# Crew can walk through both loaders to the back wall and return.
 	elf.global_position = w.bomber.to_global(Vector3(0,.05,-1.8))
 	for route in [[Vector2(0,3.8),Vector2(0,5.3),Vector2(0,6.6),Vector2(0,11)],[Vector2(0,6.6),Vector2(0,5.3),Vector2(0,3.8),Vector2(0,-1.8)]]:
 		for target in route:
@@ -131,20 +131,36 @@ func _ready() -> void:
 		elf.global_position = w.bomber.to_global(Vector3(0,.05,1.55))
 		w.set_held(1,1)
 		elf.head.look_at(w.bomber.to_global(w.queues.loader(rack)))
-		elf._unhandled_input(shelf_interact)
+		elf._unhandled_input(interact)
 		check(elf.held_kind == 0 and w.queues.queues[rack].size() == 1,"Load either rack with E from the cargo aisle")
 	w.queues.reset()
-	# Shelf boards physically support released cargo as well as blocking players.
+	for rack in 2:
+		var kind := rack + 1
+		elf.global_position = w.bomber.to_global(Vector3(0,.04,7.44))
+		var target: Vector3 = w.bomber.to_global(w.queues.mouth(rack)+Vector3.UP*.34)
+		var aim: Vector3 = (target-elf.head.global_position).normalized()
+		w.set_held(1,kind)
+		w.charge_start[1] = Time.get_ticks_msec()-1100
+		w._handle_cargo(1,"throw",atan2(-aim.x,-aim.z),asin(aim.y),0)
+		for tick in 40:
+			await get_tree().physics_frame
+			w._step_cargo(1.0/60)
+		check(w.queues.queues[rack].size() == 1 and w.queues.queues[rack][0].kind == kind and w.loose.is_empty(), "A physical throw from the stores loads the correct rack exactly once")
+	w.queues.reset()
+	# A loose item can be set down on a parcel stack.
 	w.set_held(1,1)
 	elf.global_position = w.bomber.to_global(Vector3(0,.05,0))
 	w._handle_cargo(1,"drop",0,0,0)
-	var shelf_item: int = w.next_item-1
-	w.loose[shelf_item].global_position = w.bomber.to_global(Vector3(2.42,1.45,8.65))
-	w.loose[shelf_item].linear_velocity = Vector3.ZERO
+	var dropped_item: int = w.next_item-1
+	var stock_top := space.intersect_ray(PhysicsRayQueryParameters3D.create(
+		w.bomber.to_global(Vector3(-1.48, 2.8, 8.20)), w.bomber.to_global(Vector3(-1.48, 0, 8.20)), 16))
+	check(not stock_top.is_empty(), "Parcel stack has physical support")
+	w.loose[dropped_item].global_position = stock_top.position + Vector3.UP * .55
+	w.loose[dropped_item].linear_velocity = Vector3.ZERO
 	for i in range(60): await get_tree().physics_frame
-	var shelf_height: float = w.bomber.to_local(w.loose[shelf_item].global_position).y
-	check(shelf_height > 1.15 and shelf_height < 1.35,"Loose cargo rests on middle shelf collision")
-	w.remove_loose(shelf_item)
+	var rest_height: float = w.bomber.to_local(w.loose[dropped_item].global_position).y
+	check(absf(rest_height - w.bomber.to_local(stock_top.position).y - w.Cargo.HALF_SIZE) < .06,"Loose cargo rests on the parcel stack")
+	w.remove_loose(dropped_item)
 	w.set_held(1,1)
 	elf.global_position = w.bomber.to_global(Vector3(0,.05,0))
 	w._handle_cargo(1,"drop",0,0,0)
@@ -187,9 +203,6 @@ func _ready() -> void:
 	elf.global_position = w.bomber.to_global(Vector3(-1.7,0,-4.8))
 	elf.head.look_at(w.bomber.to_global(w.access.POINTS.door))
 	w.speed = 8
-	var interact := InputEventAction.new()
-	interact.action = "interact"
-	interact.pressed = true
 	elf._unhandled_input(interact)
 	check(not w.access.opened.door,"E must close door from inside while taxiing")
 	w.access.step(1.2)
@@ -319,12 +332,12 @@ func _ready() -> void:
 		await screenshot("rear-room")
 		camera.position = w.bomber.to_global(Vector3(0,1.7,4.8))
 		camera.look_at(w.bomber.to_global(Vector3(0,1.4,-.5)))
-		await screenshot("poc-cabin-shelves")
-		camera.position = w.bomber.to_global(Vector3(.1,1.6,1.5))
-		camera.look_at(w.bomber.to_global(Vector3(-2.42,1.4,0)))
-		await screenshot("individual-shelves")
-		camera.position = w.bomber.to_global(Vector3(0,2.05,6.5))
-		camera.look_at(w.bomber.to_global(Vector3(0,1.05,10.5)))
+		await screenshot("cargo-loading-aisle")
+		camera.position = w.bomber.to_global(Vector3(.1,1.6,8.1))
+		camera.look_at(w.bomber.to_global(Vector3(-1.77,1.0,9.5)))
+		await screenshot("parcel-stockpile")
+		camera.position = w.bomber.to_global(Vector3(0,1.68,7.14))
+		camera.look_at(w.bomber.to_global(Vector3(0,1.36,10.55)))
 		await screenshot("rear-room-concept")
 		w.access.set_state("hatch",true,1)
 		w.access.step(0)

@@ -18,7 +18,7 @@ func impact(kind: int, start: Vector3, finish: Vector3) -> int:
 
 func compare_trajectory(origin: Vector3, velocity: Vector3, bank: float) -> void:
 	var pose := Transform3D(Basis(Vector3.FORWARD, bank), origin)
-	var predicted: Dictionary = world.preview.predict({"pose": pose, "velocity": velocity})
+	var predicted: Dictionary = world.stations.predict({"pose": pose, "velocity": velocity}, world.Cargo.Kind.PRESENT)
 	check(not predicted.is_empty(), "Ballistic estimate must find first impact")
 	var id := next_id
 	next_id += 1
@@ -44,23 +44,41 @@ func _ready() -> void:
 	var good := -1
 	var bad := -1
 	for i in world.recipients.houses.size():
-		if world.recipients.houses[i].nice: good = i
+		var house: Dictionary = world.recipients.houses[i]
+		# Keep the wall sweep and the ground miss clear of neighboring recipients.
+		var clear := true
+		for other in world.recipients.houses:
+			if other.root != house.root and house.base.distance_to(other.base) < 19:
+				clear = false
+				break
+		if not clear: continue
+		if house.nice: good = i
 		else: bad = i
+		if good >= 0 and bad >= 0: break
+	check(good >= 0 and bad >= 0, "District has separate roofs for impact checks")
 	var base: Vector3 = world.recipients.houses[good].base
 	var bad_base: Vector3 = world.recipients.houses[bad].base
+	# Exercise a delivery pass with the aircraft in town, inside the loose-cargo lifetime radius.
+	world.bomber.position = base + Vector3(0,60,20)
+	world.previous_plane = world.bomber.transform
+	world.moving_hull.transform = world.bomber.transform
+	await get_tree().physics_frame
+	var roof: Node3D = world.recipients.houses[good].root
+	var wall_start := roof.to_global(Vector3(-6,3,0))
+	var wall_end := roof.to_global(Vector3(-3,3,0))
 	var id := impact(1,base+Vector3(0,20,0),base+Vector3(0,2,0))
 	check(world.score == 10,"Roof gives +10")
 	world._resolve_impact(id,world.recipients.houses[good].root,base)
 	check(world.score == 10,"Duplicate impact must not score")
-	impact(1,base+Vector3(2.2,20,1),base+Vector3(2.2,0,1))
+	impact(1,world.chimneys[good].top+Vector3.UP*12,world.chimneys[good].top-Vector3.UP*7)
 	check(world.score == 25,"Chimney gives +15")
-	impact(1,base+Vector3(-12,3,0),base+Vector3(1,3,0))
+	impact(1,wall_start,wall_end)
 	check(world.score == 35,"Wall gives +10")
-	impact(1,bad_base+Vector3(2.2,20,1),bad_base+Vector3(2.2,0,1))
+	impact(1,world.chimneys[bad].top+Vector3.UP*12,world.chimneys[bad].top-Vector3.UP*7)
 	check(world.score == 30,"Naughty chimney remains -5")
 	impact(1,base+Vector3(11,10,0),base+Vector3(11,-1,0))
 	check(world.score == 30,"Ground miss gives no points")
-	var predicted: Dictionary = world.preview.predict({"pose":Transform3D(Basis.IDENTITY,base+Vector3(0,15,0)),"velocity":Vector3.ZERO})
+	var predicted: Dictionary = world.stations.predict({"pose":Transform3D(Basis.IDENTITY,base+Vector3(0,15,0)),"velocity":Vector3.ZERO}, world.Cargo.Kind.PRESENT)
 	check(not predicted.is_empty(),"Prediction hits roof")
 	check(world.recipients.identify(predicted.collider).id == good,"Prediction identifies same recipient")
 	# Let the actual rigid body fall and compare its first contact with the prediction.
@@ -76,7 +94,7 @@ func _ready() -> void:
 	check(not world.loose.has(physical_id),"Physical fall resolves")
 	check(last_point.distance_to(predicted.point) < 1.0,"Preview agrees with physical impact within cargo size/timestep tolerance")
 	check(world.score == 40,"Physical roof delivery scores once")
-	impact(2,base+Vector3(-12,3,0),base+Vector3(1,3,0))
+	impact(2,wall_start,wall_end)
 	check(world.recipients.houses[good].destroyed,"Bomb destroys hit house")
 	check(world.score == 40,"Bomb adds no points")
 	check(not world.recipients.houses[bad].destroyed,"No area destruction")

@@ -51,6 +51,11 @@ func _ready() -> void:
 		for kind in [1,2,1,2,1]: check(load_item(rack,kind),"Mixed queue loads")
 		check(w.queues.queues[rack].size() == 5,"Queue capacity five")
 		check(not load_item(rack,2) and elf.held_kind == 2,"Full rack preserves held item")
+	var mouth: Vector3 = w.queues.mouth(0)
+	var toss_id: int = w.next_item
+	w.next_item += 1
+	w.show_loose(toss_id,1,Transform3D(Basis.IDENTITY,w.bomber.to_global(mouth+Vector3.BACK)))
+	check(not w.queues.catch_throw(toss_id,mouth+Vector3.BACK,mouth+Vector3.FORWARD) and w.loose.has(toss_id),"A full hopper leaves the thrown parcel recoverable")
 	w.set_held(1,0)
 	for index in [0,2,2]:
 		var before: Array = w.queues.queues[0].duplicate(true)
@@ -64,6 +69,12 @@ func _ready() -> void:
 		w.set_held(1,0)
 	check(load_item(0,2),"Reload appends to tail")
 	check(w.queues.queues[0][-1].kind == 2,"Reload reorders")
+	check(not w.queues.catch_throw(toss_id,mouth+Vector3.FORWARD,mouth+Vector3.BACK),"A throw behind the hopper cannot load it")
+	check(not w.queues.catch_throw(toss_id,mouth+Vector3.UP+Vector3.BACK,mouth+Vector3.UP+Vector3.FORWARD),"A high miss stays loose")
+	w.queues.jammed = 0
+	check(not w.queues.catch_throw(toss_id,mouth+Vector3.BACK,mouth+Vector3.FORWARD) and w.loose.has(toss_id),"A jammed intake preserves loose cargo")
+	w.queues.jammed = -1
+	w.remove_loose(toss_id)
 	w.set_held(1,0)
 	aim(1,w.stations.CONTROLS.delivery,Vector3(.9,.2,0))
 	check(w.queues.aimed(1).is_empty(),"Console aim does not select a loading point")

@@ -12,7 +12,7 @@ runners, cargo rooms and forward belly turret retain their layout and rig marker
 - `aircraft/build.py`: rebuilds `aircraft/north_star.blend`,
   `../assets/aircraft/north_star.glb` and the fitted collision resources.
 - `aircraft/polish.py`: headliner, padded wall linings, sewn borders, panel hardware,
-  handgrips, stores shelves, gunner fittings and material finishing.
+  handgrips, aft storeroom fittings, gunner fittings and material finishing.
 - `elf/character.py`, `elf/refine.py`, `elf/meshcraft.py`, `elf/surface_paint.py` and `elf/build.py`: rounded
   crew and first-person arm sources, joined surfaces, curved ears, blended garment
   weights, animations, material batching and both generated GLBs.

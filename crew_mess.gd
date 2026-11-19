@@ -19,6 +19,10 @@ const STOCK := [
 ]
 var world: Node3D
 var props: Array[RigidBody3D] = []
+var prop_visuals: Array[Node3D] = []
+var motion_tweens := {}
+var ownership_revision := 0
+var heartbeat := 0.0
 var holders := PackedInt64Array()
 var seats := {}
 var charges := {}
@@ -109,7 +113,10 @@ func build(w: Node3D, depot: Node3D) -> void:
 		var collider := CollisionShape3D.new()
 		collider.shape = shape
 		body.add_child(collider)
-		graphics.dress_prop(body,i,viewport.get_texture(),shape.size)
+		var visual := Node3D.new()
+		body.add_child(visual)
+		graphics.dress_prop(visual,i,viewport.get_texture(),shape.size)
+		prop_visuals.append(visual)
 		props.append(body)
 		holders.append(0)
 
@@ -128,7 +135,7 @@ func target(id: int) -> String:
 	var options := {}
 	for i in props.size():
 		if holders[i] == 0 or (i == 0 and map_out and holders[i] != id):
-			options["prop%d" % i] = [props[i].position,.48]
+			options["prop%d" % i] = [prop_visuals[i].global_position,.48]
 	# Intersect the visible board rectangle so its corners work while the plane banks.
 	var local_eye := board.to_local(view.origin)
 	var direction := board.global_basis.inverse() * (-view.basis.z)
@@ -247,7 +254,7 @@ func pencil_remote(point: Vector3) -> void:
 
 func pencil(id: int, point: Vector3) -> void:
 	if held(id) != 0 and (holders[0] != PINNED or target(id) != "take_chart"): return
-	if not point.is_finite() or absf(point.x)>4000 or absf(point.z)>4000: return
+	if not point.is_finite() or not world.FLIGHT_AREA.grow(1100).has_point(Vector2(point.x,point.z)): return
 	var next := Vector3(point.x,0,point.z)
 	if waypoint.is_finite() and waypoint.distance_to(next)<12: next = Vector3.INF
 	set_mark.rpc(next)
@@ -391,18 +398,22 @@ func poses() -> Array[Transform3D]:
 	return result
 
 func publish() -> void:
+	ownership_revision += 1
 	refresh()
 	var transforms := poses()
 	for id in subscribers:
-		state.rpc_id(id,holders,seats,map_out,vouchers,upgrades,baskets,record,transforms)
+		state.rpc_id(id,holders,seats,map_out,vouchers,upgrades,baskets,record,transforms,ownership_revision)
 
 func snapshot(id: int) -> void:
 	if not subscribers.has(id): subscribers.append(id)
 	set_mark.rpc_id(id,waypoint)
-	state.rpc_id(id,holders,seats,map_out,vouchers,upgrades,baskets,record,poses())
+	state.rpc_id(id,holders,seats,map_out,vouchers,upgrades,baskets,record,poses(),ownership_revision)
 
 @rpc("authority","reliable")
-func state(owners: PackedInt64Array, occupied: Dictionary, offer: bool, money: int, gear: int, count: int, best: float, transforms: Array[Transform3D]) -> void:
+func state(owners: PackedInt64Array, occupied: Dictionary, offer: bool, money: int, gear: int, count: int, best: float, transforms: Array[Transform3D], revision: int) -> void:
+	var previous := holders
+	var initial := ownership_revision == 0
+	ownership_revision = revision
 	holders = owners
 	seats = occupied
 	map_out = offer
@@ -410,15 +421,27 @@ func state(owners: PackedInt64Array, occupied: Dictionary, offer: bool, money: i
 	upgrades = gear
 	baskets = count
 	record = best
-	for i in props.size(): set_body(i,transforms[i],Vector3.ZERO)
+	for i in props.size():
+		if initial or previous[i] != holders[i] or props[i].position.distance_to(transforms[i].origin) > 2.0:
+			if motion_tweens.has(i): motion_tweens[i].kill()
+			set_body(i,transforms[i],Vector3.ZERO)
 	refresh()
 
 func refresh() -> void:
+	for i in props.size():
+		var actor = world.players.get(holders[i])
+		var visual := prop_visuals[i]
+		var parent: Node3D = actor.presentation.socket if actor else props[i]
+		if visual.get_parent() != parent:
+			visual.reparent(parent,false)
+		visual.transform = Transform3D.IDENTITY
+		if actor and i == 0:
+			visual.rotate_x(-1.55 if map_out else .63)
 	dialogue.refresh_stock()
 	world.max_throw_speed = base_throw * (1.35 if upgrades & 1 else 1.0)
 	world.charge_seconds = base_charge * (.65 if upgrades & 2 else 1.0)
 	board_page.visible = holders[0] == PINNED
-	props[0].visible = not board_page.visible
+	prop_visuals[0].visible = not board_page.visible
 	if presenting and held(multiplayer.get_unique_id()) != 0 and (not board_page.visible or target(multiplayer.get_unique_id()) != "take_chart"): read_sheet(false)
 	placard.text = "CHIMNEY LEAGUE\n%02d   /   BEST %.1f m" % [baskets,record]
 
@@ -459,9 +482,14 @@ func ring() -> void:
 	bell.play()
 
 @rpc("authority","call_remote","unreliable_ordered",2)
-func motion(transforms: Array[Transform3D]) -> void:
+func motion(transforms: Array[Transform3D], revision: int) -> void:
+	if revision != ownership_revision: return
 	for i in props.size():
-		if holders[i] == 0: props[i].transform = transforms[i]
+		if holders[i] != 0 or props[i].transform.is_equal_approx(transforms[i]): continue
+		if motion_tweens.has(i): motion_tweens[i].kill()
+		var tween := create_tween()
+		motion_tweens[i] = tween
+		tween.tween_property(props[i],"transform",transforms[i],.10)
 
 func _physics_process(delta: float) -> void:
 	if props.is_empty(): return
@@ -470,13 +498,7 @@ func _physics_process(delta: float) -> void:
 		if holders[i] == PINNED:
 			body.global_transform = board.global_transform
 			continue
-		var actor = world.players.get(holders[i])
-		if actor:
-			var view: Transform3D = actor.head.global_transform
-			body.transform = view.translated_local(Vector3(.07,-.32,-.77))
-			if i == 0:
-				body.rotate_object_local(Vector3.RIGHT, .63 if not map_out else -1.55)
-			continue
+		if holders[i] > 0: continue
 		if not multiplayer.is_server(): continue
 		if i in [1,2,3] and thrown_from.has(i) and body.position.y < CHIMNEY.y and body.position.y > 1.05 and Vector2(body.position.x-CHIMNEY.x,body.position.z-CHIMNEY.z).length() < .53:
 			var start: Vector3 = thrown_from[i]
@@ -486,28 +508,30 @@ func _physics_process(delta: float) -> void:
 			set_body(i,Transform3D(Basis.IDENTITY,CHIMNEY+Vector3(0,-1.18,1.02)),Vector3(0,0,2.6))
 			ring.rpc()
 			publish()
-		if body.position.y < -5 or Vector2(body.position.x,body.position.z).length() > 3000 or (i != 0 and body.position.distance_to(HOME[i]) > 35):
+		if body.position.y < -5 or not world.ground_area.has_point(Vector2(body.position.x,body.position.z)) or (i != 0 and body.position.distance_to(HOME[i]) > 35):
 			set_body(i,Transform3D(Basis.IDENTITY,HOME[i]),Vector3.ZERO)
 			thrown_from.erase(i)
 	net_clock += delta
+	heartbeat += delta
 	if net_clock >= .10:
 		net_clock = 0
 		if multiplayer.is_server() and not subscribers.is_empty():
 			var transforms := poses()
-			var changed := last_sent.is_empty()
+			var changed := last_sent.is_empty() or heartbeat >= 1.0
 			for i in props.size():
 				if changed: break
 				if holders[i] == 0 and not transforms[i].is_equal_approx(last_sent[i]): changed = true
 			if changed:
-				for id in subscribers: motion.rpc_id(id,transforms)
+				for id in subscribers: motion.rpc_id(id,transforms,ownership_revision)
+				if heartbeat >= 1.0: heartbeat = 0.0
 				last_sent = transforms
 		var reader = world.players.get(multiplayer.get_unique_id())
-		if reader and reader.position.distance_squared_to(props[0].position) < 400:
+		if reader and (board_page.visible or reader.position.distance_squared_to(prop_visuals[0].global_position) < 400):
 			chart.queue_redraw()
 			chart.get_parent().render_target_update_mode = SubViewport.UPDATE_ONCE
 	if presenting and held(multiplayer.get_unique_id()) != 0 and (holders[0] != PINNED or target(multiplayer.get_unique_id()) != "take_chart"):
 		read_sheet(false)
 	sheet.visible = presenting and not Game.menu_open
-	props[0].visible = holders[0] != PINNED and not sheet.visible
+	prop_visuals[0].visible = holders[0] != PINNED and not sheet.visible
 	carrier_phase = fmod(carrier_phase+delta*.05,1.0)
 	carrier.position = Vector3(-31.7+4.9*(1-cos(TAU*carrier_phase)),3.65,835.9)

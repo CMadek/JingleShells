@@ -83,4 +83,3 @@ for rack,side in enumerate((-1,1)):
 exec(compile((HERE/"dispatch_terminal.py").read_text(),str(HERE/"dispatch_terminal.py"),"exec"),globals())
 exec(compile((HERE/"ball_turret.py").read_text(),str(HERE/"ball_turret.py"),"exec"),globals())
 exec(compile((HERE/"rear_engines.py").read_text(),str(HERE/"rear_engines.py"),"exec"),globals())
-label("Mk II builders plate","NORTH STAR  /  MK II",(0,-11.90,1.9),(pi/2,0,pi),.17,cream)

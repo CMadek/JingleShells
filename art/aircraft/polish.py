@@ -72,23 +72,49 @@ for side in (-1,1):
         star.append((side*.275,-13.8+r*cos(a),7.25+r*sin(a)))
     obj("Tail North Star inlay",star,[tuple(range(16))],cream)
 
-# Rounded, robust stores shelves authored alongside the aircraft, replacing boxes
-# generated at runtime. Dimensions and each cargo pickup center remain identical.
+# Square postal stores inside the tail skin, with a timber aisle between pallets.
+for i in range(13):
+    box("Stores fir deck plank",((i-6)*.373,-9.495,.014),(.37,4.85,.034),wood[(i*3)%len(wood)],.004)
+box("Stores ceiling",(0,-9.495,3.76),(4.94,4.87,.12),lining,.02)
+for y in (-7.52,-9.49,-11.46):
+    box("Stores overhead beam",(0,y,3.67),(4.87,.10,.09),pine,.014)
 for side in (-1,1):
-    x=side*2.42
-    for z in (.25,.95):
-        box("Stores padded shelf",(x,-8.65,z),(.9,2.8,.09),pine,.025)
-        box("Stores shelf leather mat",(x,-8.65,z+.048),(.79,2.69,.008),leather,.004)
-        line("Stores shelf brass lip",[(side*1.97,-7.28,z+.08),(side*1.97,-10.02,z+.08)],.025,gold)
-        for y in (-7.75,-8.65,-9.55):
-            for dx in (-.30,.30):
-                box("Individual cargo cradle",(x+dx,y,z+.07),(.06,.53,.045),rubber,.02)
-    for y in (-7.25,-10.05):
-        for xx in (side*2.02,side*2.82):
-            rod("Turned stores upright",(xx,y,.04),(xx,y,1.10),.045,pine,20)
-            rod("Stores brass foot",(xx,y,.02),(xx,y,.16),.058,gold,20)
-    box("Stores framed label",(side*1.95,-8.65,.70),(.06,1.20,.27),pine,.025)
-    label("Stores painted title","BOMBS" if side==1 else "PRESENTS",(side*1.913,-8.65,.70),(pi/2,0,pi/2 if side<0 else -pi/2),.12,cream)
+    box("Stores liner wall",(side*2.475,-9.495,1.88),(.10,4.87,3.76),pine,.012)
+    for j in range(8):
+        y=-7.385-j*.604
+        box("Fir wainscot",(side*2.417,y,.69),(.035,.59,1.32),wood[j%len(wood)],.007)
+        box("Stamped liner panel",(side*2.416,y,2.49),(.025,.584,2.14),upholstery,.023)
+    for h in (.16,1.39,3.46):
+        box("Stores rubbing strake",(side*2.385,-9.495,h),(.085,4.84,.08),wood[1],.013)
+    x=side*1.77
+    for dx in (-.49,.49):
+        box("Pallet skid",(x+dx,-9.50,.091),(.14,3.22,.12),iron,.012)
+    for j in range(10):
+        box("Pallet slat",(x,-8.06-j*.32,.17),(1.24,.31,.08),wood[j%len(wood)],.01)
+    for j in range(6):
+        box("Aisle painted dash",(side*1.05,-8.18-j*.53,.035),(.046,.33,.007),cream,.002)
+    box("Freight placard rim",(side*1.47,-11.87,1.84),(1.58,.075,.70),gold,.03)
+    box("Freight placard face",(side*1.47,-11.818,1.84),(1.51,.046,.63),red if side==1 else pine,.025)
+    for words,h,size in [("BOMBS" if side==1 else "PRESENTS",1.93,.21),
+                         ("HANDLE WITH CARE" if side==1 else "NORTH POLE POST",1.68,.090)]:
+        label("Freight placard lettering",words,(side*1.47,-11.786,h),(pi/2,0,pi),size,cream)
+    for y in (-8.0,-10.8):
+        box("Stores lamp bracket",(side*2.35,y,2.93),(.14,.26,.39),iron,.025)
+        rod("Stores lamp glass",(side*2.24,y,2.83),(side*2.24,y,3.03),.072,warm,16)
+        for h in (2.81,3.05):
+            rod("Stores lamp cap",(side*2.24,y,h-.018),(side*2.24,y,h+.018),.091,gold,16)
+        for offset in (-.052,.052):
+            rod("Stores lamp guard",(side*2.17,y+offset,2.82),(side*2.17,y+offset,3.04),.009,iron,8)
+
+# The ground crew keeps its own embarrassing safety record.
+box("Counting board frame",(0,-11.865,1.53),(1.12,.08,.93),wood[0],.025)
+box("Counting board slate",(0,-11.812,1.53),(1.05,.042,.86),pine,.016)
+for words,h in [("DAYS WITHOUT",1.82),("A MIX-UP",1.66)]:
+    label("Safety record title",words,(0,-11.783,h),(pi/2,0,pi),.094,cream)
+box("Flip number card",(0,-11.776,1.35),(.38,.035,.34),cream,.009)
+label("Incident count","0",(0,-11.750,1.36),(pi/2,0,pi),.26,iron)
+for x in (-.12,.12):
+    box("Card clip",(x,-11.746,1.52),(.032,.025,.06),gold,.007)
 
 # Seat upholstery seams and solid mounts stay on the pitch rig, never the camera.
 turret_center=Vector((well_x,well_y,-1.55))

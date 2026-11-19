@@ -6,11 +6,15 @@ var failures := 0
 var chart_verified := false
 
 @rpc("any_peer","reliable")
-func verify_chart(seed_value: int, sites: int, chart_mark: Vector3) -> void:
+func verify_chart(seed_value: int, sites: int, scenery: int, chart_mark: Vector3) -> void:
 	if not is_host: return
 	check(seed_value == w.district.route_seed and sites == hash(w.district.sites),"Both processes generated identical delivery targets")
+	check(scenery == scenery_hash(),"Late join reconstructs the same valley elevations, river, outposts, forests and lake shoreline")
 	check(chart_mark == w.mess.waypoint,"Late join restored pencil mark")
 	chart_verified = true
+func scenery_hash() -> int:
+	var d = w.district
+	return hash([d.woodland.woods,d.woodland.shore,d.valley.heights,d.valley.river,d.valley.rail,d.valley.survey])
 func check(ok: bool, message: String) -> void:
 	if not ok:
 		failures += 1
@@ -100,7 +104,7 @@ func client_checks() -> void:
 	check(w.queues.queues[0] == [{"id":101,"kind":1},{"id":102,"kind":2}],"Late join receives exact ordered mixed queue")
 	check(w.stations.occupants.delivery == 1,"Late join receives station occupancy")
 	check(w.mess.vouchers == 15 and w.mess.waypoint == Vector3(90,0,-840),"Late join receives quartermaster and map state")
-	verify_chart.rpc_id(1,w.district.route_seed,hash(w.district.sites),w.mess.waypoint)
+	verify_chart.rpc_id(1,w.district.route_seed,hash(w.district.sites),scenery_hash(),w.mess.waypoint)
 	check(absf(w.in_steer-.4)<.001 and absf(w.in_throttle-.2)<.001 and absf(w.in_climb-.1)<.001,"Client receives flight controls for delayed-release prediction")
 	check(is_equal_approx(w.burner_heat,.82) and w.burner_locked and w.instruments.annunciator.text == "COOLING","Late join restores the hot engine and its cockpit warning")
 	var elf = w.players[id]

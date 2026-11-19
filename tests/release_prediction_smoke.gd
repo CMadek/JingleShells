@@ -90,7 +90,37 @@ func _ready() -> void:
 			print("DELAY IMPACT ERROR rack=",rack," controls=",scenario,": ",error)
 			check(error<.8,"Crosshair matches actual delayed present impact within 0.8m")
 			w.remove_loose(id)
+	await check_airborne_toss(w)
 	print("RELEASE PREDICTION CHECKS: ","PASS" if failures==0 else "FAIL")
 	main.queue_free()
 	await get_tree().create_timer(.3).timeout
 	get_tree().quit(failures)
+
+# A parked-plane test cannot catch a one-tick mismatch between the moving
+# hopper and the parcel. At cruise speed the error exceeds the catch depth.
+func check_airborne_toss(w: Node3D) -> void:
+	w.begin_level()
+	var elf = w.players[1]
+	elf.set_physics_process(false)
+	w.bomber.position = Vector3(1000,110,1000)
+	w.speed = 38
+	w.throttle = .65
+	w.grounded = false
+	w.heading = .4
+	w.roll = .10
+	w.cruise_target = Vector2(.4,110)
+	w._apply_attitude()
+	w.previous_plane = w.bomber.transform
+	w.moving_hull.transform = w.bomber.transform
+	elf.global_position = w.bomber.to_global(Vector3(0,.06,7.44))
+	w.set_physics_process(true)
+	for i in 6: await get_tree().physics_frame
+	var frame: Basis = w.crew_frame(w.bomber.transform)
+	var eye: Vector3 = elf.global_position + frame.y * elf.head.position.y
+	var target: Vector3 = w.bomber.to_global(w.queues.mouth(0) + Vector3.UP*.34)
+	var aim := frame.inverse() * (target-eye).normalized()
+	w.set_held(1,1)
+	w.charge_start[1] = Time.get_ticks_msec()-1100
+	w._handle_cargo(1,"throw",atan2(-aim.x,-aim.z),asin(aim.y),0)
+	for i in 45: await get_tree().physics_frame
+	check(w.queues.queues[0].size() == 1 and w.loose.is_empty(), "The moving port hopper catches a crew throw at cruise speed")

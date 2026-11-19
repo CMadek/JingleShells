@@ -1,7 +1,7 @@
 extends Node
 
 const MAX_ELVES := 8
-const PROTOCOL := "jingle-bells-22"
+const PROTOCOL := "jingle-bells-28"
 var ui: CanvasLayer
 var menu_music: AudioStreamPlayer
 var lobby_id := 0
@@ -127,7 +127,8 @@ func _return_to_menu(message: String = "") -> void:
 	operation = ""
 	target_lobby = 0
 	var world := get_node_or_null("World")
-	if world and multiplayer.is_server() and lobby_id != 0 and Game.steam_ready:
+	var peer := multiplayer.multiplayer_peer
+	if world and lobby_id != 0 and Game.steam_ready and peer and peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED and multiplayer.is_server():
 		Game.steam.setLobbyJoinable(lobby_id, false)
 	if world:
 		remove_child(world)

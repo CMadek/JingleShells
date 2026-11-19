@@ -60,12 +60,16 @@ rig.animation_data_create()
 clips=['idle','walk','jump','land','crouch_idle','crouch_walk','crouch_carry_idle','crouch_carry_walk','pickup','carry_idle','carry_walk','charge','throw','drop','helm']
 for clip in clips:
  action=bpy.data.actions.new(clip);rig.animation_data.action=action
- for frame in [1,7,13,19,25]:
+ for frame in range(1,26,3):
   phase=(frame-1)/24*math.tau
   for p in rig.pose.bones:p.rotation_mode='XYZ';p.rotation_euler=(0,0,0);p.location=(0,0,0)
   crouch=clip.startswith('crouch');moving='walk' in clip;carry='carry' in clip or clip in ['pickup','charge','throw','drop','helm']
   rig.pose.bones['Root'].location.y=-.35 if crouch else math.sin(phase)*.008
   if crouch:rig.pose.bones['Spine'].rotation_euler.x=.55
+  if moving:
+   rig.pose.bones['Root'].location.y+=.034*math.cos(2*phase)
+   rig.pose.bones['Root'].location.x=.023*math.sin(phase)
+   rig.pose.bones['Spine'].rotation_euler.y=.055*math.sin(phase)
   # An anchored, outward sway keeps the scarf on the visible third-person rig.
   rig.pose.bones['Scarf'].rotation_euler.x=-.04-(.14*abs(math.sin(phase)) if moving else .012*math.sin(phase))
   rig.pose.bones['Scarf'].rotation_euler.z=(.075 if moving else .012)*math.sin(phase)
@@ -73,6 +77,10 @@ for clip in clips:
    sign=1 if side=='L' else -1
    rig.pose.bones['Thigh'+side].rotation_euler.x=(-1.4 if crouch else 0)+(math.sin(phase)*.5*sign if moving else 0)
    rig.pose.bones['Shin'+side].rotation_euler.x=2.1 if crouch else (-.35 if clip=='jump' else 0)
+   if moving:
+    swing=math.sin(phase)*sign
+    rig.pose.bones['Shin'+side].rotation_euler.x+=(.32 if crouch else .78)*max(0,-math.cos(phase)*sign)
+    if not crouch:rig.pose.bones['Thigh'+side].rotation_euler.x=.62*swing-.14
    rig.pose.bones['Arm'+side].rotation_euler.x=(-.65 if carry else 0)+(math.sin(phase)*.35*-sign if moving and not carry else 0)
    rig.pose.bones['Forearm'+side].rotation_euler.x=-.85 if carry else -.15
    if carry:rig.pose.bones['Arm'+side].rotation_euler.z=-.20 if side=='L' else .20

@@ -61,7 +61,7 @@ func _ready() -> void:
 		cam.current = true
 		cam.add_to_group("local_camera")
 		cam.fov = Game.values.fov
-		cam.far = 2000.0
+		cam.far = 4200.0
 		head.add_child(cam)
 		chase = Camera3D.new()
 		chase.add_to_group("local_camera")
@@ -200,6 +200,7 @@ func _notification(what: int) -> void:
 
 
 func carry(kind: int) -> void:
+	if held_kind == kind: return
 	charging_since = -1
 	presentation.trigger("drop" if kind == Cargo.Kind.EMPTY else "pickup")
 	held_kind = kind
@@ -210,7 +211,6 @@ func carry(kind: int) -> void:
 		held_model = Cargo.model(kind)
 		presentation.socket.add_child(held_model)
 		held_model.position = Vector3.ZERO
-		presentation.trigger("pickup")
 
 
 func keep_upright(yaw_delta: float = 0.0) -> void:
@@ -297,7 +297,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		var vertical := velocity.dot(up_direction) - GRAVITY * delta
 		if is_on_floor():
-			vertical = JUMP_SPEED if (not Game.menu_open and not world.mess.presenting and not browsing and Input.is_action_just_pressed("jump")) else 0.0
+			vertical = JUMP_SPEED if (not Game.menu_open and not world.mess.presenting and not browsing and Input.is_action_just_pressed("jump")) else -GRAVITY * delta
 		var input := Vector2.ZERO if Game.menu_open or world.mess.presenting or browsing else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		var dir := global_transform.basis * Vector3(input.x, 0, input.y)
 		velocity = dir * (crouch_speed if crouched else WALK_SPEED) + up_direction * vertical
